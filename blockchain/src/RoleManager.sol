@@ -8,6 +8,7 @@ import {AccessControl} from "openzeppelin-contracts/contracts/access/AccessContr
  * @dev Manages roles and permissions for the Authenticity & Provenance Traceability Universal System (APTUS) framework.
  */
 contract RoleManager is AccessControl {
+    
     // Defining unique identifiers for the roles
 
     // Role for "Manufacturer or authorised issuer": can register new assets and mint NFTs

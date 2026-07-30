@@ -5,6 +5,7 @@ import {Test, console} from "forge-std/Test.sol";
 import {RoleManager} from "../src/RoleManager.sol";
 
 contract RoleManagerTest is Test {
+
     RoleManager public roleManager;
 
     // Creation of dummy addresses to simulate the various actors described in the thesis
@@ -26,6 +27,7 @@ contract RoleManagerTest is Test {
     function test_AdminCanGrantIssuerRole() public {
         // The admin grants the role
         roleManager.grantIssuerRole(brandIssuer);
+
         // Verify that the brandIssuer now holds the ISSUER_ROLE
         assertTrue(roleManager.hasRole(roleManager.ISSUER_ROLE(), brandIssuer));
     }
@@ -33,6 +35,7 @@ contract RoleManagerTest is Test {
     function test_AdminCanGrantServiceRole() public {
         // The admin grants the role
         roleManager.grantServiceRole(serviceCentre);
+
         // Verify that the serviceCentre now holds the SERVICE_ROLE
         assertTrue(roleManager.hasRole(roleManager.SERVICE_ROLE(), serviceCentre));
     }
