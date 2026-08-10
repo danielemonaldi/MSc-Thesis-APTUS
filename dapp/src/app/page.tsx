@@ -2,147 +2,126 @@
 
 import { useState } from 'react';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
-import { useWriteContract, useWaitForTransactionReceipt, useAccount } from 'wagmi';
-import { keccak256, toHex } from 'viem';
-import assetRegistryJson from '../abi/AssetRegistry.json';
-import { ASSET_REGISTRY_ADDRESS } from '../contracts';
+import { useAccount, useReadContract } from 'wagmi';
+
+import roleManagerJson from '../abi/RoleManager.json';
+import { ROLE_MANAGER_ADDRESS } from '../contracts';
+
+import WelcomeScreen from '../components/WelcomeScreen';
+import IssuerDashboard from '../components/IssuerDashboard';
+import ServiceDashboard from '../components/ServiceDashboard';
+import CustomerDashboard from '../components/CustomerDashboard';
+
+// Define role identifiers for permission checks
+const ISSUER_ROLE = "0x114e74f6ea3bd819998f78687bfcb11b140da08e9b7d222fa9c1f1ba1f2aa122";
+const SERVICE_ROLE = "0xd8a7a79547af723ee3e12b59a480111268d8969c634e1a34a144d2c8b91d635b";
 
 export default function Home() {
-  // Fetch the currently connected wallet address
-  const { address } = useAccount();
+  const { address, isConnected } = useAccount();
   
-  // Local state for form inputs and UI feedback
-  const [serial, setSerial] = useState('');
-  const [brand, setBrand] = useState('');
-  const [model, setModel] = useState('');
-  const [statusMsg, setStatusMsg] = useState('');
+  // State to handle tab switching for multi-role users
+  const [activeTab, setActiveTab] = useState<'issuer' | 'service'>('issuer');
 
-  // Wagmi hook to execute smart contract write operations
-  const { data: txHash, writeContractAsync, isPending } = useWriteContract();
-
-  // Wagmi hook to wait for the transaction to be mined and confirmed on-chain
-  const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({ 
-    hash: txHash 
+  // 1. Check if the connected address has the Issuer role
+  const { data: isIssuer, isLoading: isIssuerLoading } = useReadContract({
+    address: ROLE_MANAGER_ADDRESS as `0x${string}`,
+    abi: roleManagerJson.abi,
+    functionName: 'hasRole',
+    args: address ? [ISSUER_ROLE, address] : undefined,
+    query: { enabled: isConnected }
   });
 
-  const handleMint = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setStatusMsg('1/3 ⏳ Uploading metadata to IPFS (Pinata)...');
+  // 2. Check if the connected address has the Service role
+  const { data: isService, isLoading: isServiceLoading } = useReadContract({
+    address: ROLE_MANAGER_ADDRESS as `0x${string}`,
+    abi: roleManagerJson.abi,
+    functionName: 'hasRole',
+    args: address ? [SERVICE_ROLE, address] : undefined,
+    query: { enabled: isConnected }
+  });
 
-    try {
-      // 1. Construct the metadata object standard for the Digital Passport
-      const metadata = {
-        name: `${brand} ${model} - SN: ${serial}`,
-        description: `Official Digital Passport for ${brand} ${model}.`,
-        attributes: [
-          { trait_type: "Brand", value: brand },
-          { trait_type: "Model", value: model },
-          { trait_type: "Serial Number", value: serial }
-        ]
-      };
-
-      // 2. Securely call the internal Next.js API to pin the metadata to IPFS
-      const res = await fetch('/api/pinata', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(metadata)
-      });
-      
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      
-      const tokenURI = `ipfs://${data.ipfsHash}`;
-      setStatusMsg(`2/3 ✅ IPFS upload confirmed! Preparing MetaMask transaction...`);
-
-      // 3. Compute the cryptographic hash of the asset (serial number) for on-chain verification
-      const assetHash = keccak256(toHex(serial));
-
-      // 4. Send the transaction to the Smart Contract to mint the NFT
-      await writeContractAsync({
-        address: ASSET_REGISTRY_ADDRESS as `0x${string}`,
-        abi: assetRegistryJson.abi,
-        functionName: 'registerAsset',
-        args: [
-          address,            // to: The receiving wallet address (the issuer for now)
-          BigInt(serial),     // tokenId: The serial number converted to BigInt format
-          tokenURI,           // tokenUri: The IPFS URI containing the metadata
-          assetHash           // assetHash: The Keccak256 hash for security and integrity
-        ],
-      });
-
-      setStatusMsg('3/3 ✍️ Please sign the transaction in MetaMask...');
-
-    } catch (error: any) {
-      console.error(error);
-      setStatusMsg(`❌ Error: ${error.message || 'Something went wrong during the process'}`);
-    }
-  };
+  const isLoading = isIssuerLoading || isServiceLoading;
+  
+  // Helper variable to determine if the user has BOTH roles
+  const isMultiRole = isIssuer && isService;
 
   return (
-    <div style={{ padding: '2rem', fontFamily: 'sans-serif', maxWidth: '600px', margin: '0 auto' }}>
-      <header style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2rem' }}>
-        <h1>APTUS Issuer Panel</h1>
+    <div style={{ padding: '2rem', fontFamily: 'sans-serif', maxWidth: '900px', margin: '0 auto' }}>
+      
+      {/* Navbar / Header */}
+      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3rem', paddingBottom: '1rem', borderBottom: '1px solid #e2e8f0' }}>
+        <h1 style={{ fontSize: '1.8rem', color: '#0f172a', margin: 0 }}>APTUS</h1>
         <ConnectButton />
       </header>
 
+      {/* Main Routing Logic */}
       <main>
-        <div style={{ padding: '1.5rem', backgroundColor: '#f9f9f9', borderRadius: '12px', border: '1px solid #ddd' }}>
-          <h2>Register New Watch</h2>
-          <p style={{ fontSize: '0.9rem', color: '#666', marginBottom: '1.5rem' }}>
-            Fill in the details to generate the Digital Passport and register it on the Sepolia blockchain.
-          </p>
+        {/* Scenario 1: Wallet not connected */}
+        {!isConnected ? <WelcomeScreen /> : null}
 
-          <form onSubmit={handleMint} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            <input 
-              required placeholder="Brand (e.g. Rolex)" 
-              value={brand} onChange={e => setBrand(e.target.value)}
-              style={{ padding: '0.8rem', borderRadius: '6px', border: '1px solid #ccc' }}
-            />
-            <input 
-              required placeholder="Model (e.g. Submariner)" 
-              value={model} onChange={e => setModel(e.target.value)}
-              style={{ padding: '0.8rem', borderRadius: '6px', border: '1px solid #ccc' }}
-            />
-            <input 
-              required placeholder="Serial Number / NFC ID" 
-              value={serial} onChange={e => setSerial(e.target.value)}
-              style={{ padding: '0.8rem', borderRadius: '6px', border: '1px solid #ccc' }}
-            />
-            
-            <button 
-              type="submit" 
-              disabled={isPending || isConfirming}
-              style={{ 
-                padding: '1rem', 
-                backgroundColor: isPending || isConfirming ? '#999' : '#0070f3', 
-                color: 'white', 
-                border: 'none', 
-                borderRadius: '6px', 
-                cursor: 'pointer',
-                fontWeight: 'bold'
-              }}>
-              {isPending || isConfirming ? 'Processing...' : 'Issue Digital Passport'}
-            </button>
-          </form>
-
-          {/* Status Feedback Section */}
-          <div style={{ marginTop: '1.5rem', fontSize: '0.9rem', fontWeight: 'bold' }}>
-            <p>{statusMsg}</p>
-            {isConfirming && <p style={{ color: 'orange' }}>⏳ Waiting for block confirmation on Sepolia...</p>}
-            {isConfirmed && (
-              <div style={{ color: 'green', marginTop: '1rem' }}>
-                <p>🎉 <strong>Success!</strong> Asset successfully registered.</p>
-                <a 
-                  href={`https://sepolia.etherscan.io/tx/${txHash}`} 
-                  target="_blank" 
-                  style={{ color: '#0070f3', textDecoration: 'underline' }}>
-                  View transaction on Etherscan
-                </a>
-              </div>
-            )}
+        {/* Scenario 2: Permission verification in progress */}
+        {isConnected && isLoading ? (
+          <div style={{ textAlign: 'center', padding: '3rem' }}>
+            <p style={{ color: '#64748b', fontSize: '1.1rem' }}>Verifying blockchain permissions...</p>
           </div>
-        </div>
+        ) : null}
+
+        {/* Scenario 3: Multi-Role User (Has BOTH Issuer and Service roles) */}
+        {isConnected && !isLoading && isMultiRole ? (
+          <div>
+            {/* Tab Navigation Menu */}
+            <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '1rem' }}>
+              <button 
+                onClick={() => setActiveTab('issuer')}
+                style={{
+                  padding: '0.5rem 1rem',
+                  border: 'none',
+                  backgroundColor: activeTab === 'issuer' ? '#0f172a' : 'transparent',
+                  color: activeTab === 'issuer' ? 'white' : '#64748b',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontWeight: 'bold'
+                }}
+              >
+                Issuer Mode
+              </button>
+              <button 
+                onClick={() => setActiveTab('service')}
+                style={{
+                  padding: '0.5rem 1rem',
+                  border: 'none',
+                  backgroundColor: activeTab === 'service' ? '#854d0e' : 'transparent',
+                  color: activeTab === 'service' ? 'white' : '#64748b',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontWeight: 'bold'
+                }}
+              >
+                Service Mode
+              </button>
+            </div>
+            
+            {/* Render the selected dashboard */}
+            {activeTab === 'issuer' ? <IssuerDashboard address={address} /> : <ServiceDashboard address={address} />}
+          </div>
+        ) : null}
+
+        {/* Scenario 4: User is ONLY Issuer */}
+        {isConnected && !isLoading && isIssuer && !isService ? (
+          <IssuerDashboard address={address} />
+        ) : null}
+
+        {/* Scenario 5: User is ONLY Service */}
+        {isConnected && !isLoading && isService && !isIssuer ? (
+          <ServiceDashboard address={address} />
+        ) : null}
+
+        {/* Scenario 6: Standard Customer Dashboard (Has neither role) */}
+        {isConnected && !isLoading && !isIssuer && !isService ? (
+          <CustomerDashboard address={address} />
+        ) : null}
       </main>
+
     </div>
   );
 }
