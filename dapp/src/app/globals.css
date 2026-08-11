@@ -1,0 +1,7 @@
+@import "tailwindcss";
+
+/* Custom base styles for a luxury feel */
+body {
+  background-color: #f8fafc;
+  color: #0f172a;
+}

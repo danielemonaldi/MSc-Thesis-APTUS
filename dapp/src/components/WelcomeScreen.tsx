@@ -2,11 +2,16 @@
 
 export default function WelcomeScreen() {
   return (
-    <div style={{ textAlign: 'center', padding: '4rem 2rem', backgroundColor: '#f8fafc', borderRadius: '16px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
-      <h2 style={{ fontSize: '2.5rem', color: '#0f172a', marginBottom: '1rem' }}>Welcome to APTUS</h2>
-      <p style={{ fontSize: '1.2rem', color: '#475569', maxWidth: '500px', margin: '0 auto 2rem auto' }}>
+    <div className="flex flex-col items-center justify-center py-20 px-6 bg-white rounded-2xl shadow-sm border border-slate-100 mt-10">
+      <h2 className="text-4xl font-light text-slate-900 tracking-tight mb-4">
+        Welcome to APTUS
+      </h2>
+      <p className="text-lg text-slate-500 max-w-lg text-center mb-8 font-light">
         The next-generation Digital Passport for luxury watches. Connect your Web3 wallet to access your secure ecosystem.
       </p>
+      
+      {/* Decorative luxury line */}
+      <div className="w-16 h-px bg-slate-300"></div>
     </div>
   );
 }

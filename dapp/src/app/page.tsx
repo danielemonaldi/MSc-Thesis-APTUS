@@ -22,7 +22,7 @@ export default function Home() {
   const { address, isConnected } = useAccount();
   const [activeTab, setActiveTab] = useState<string>('');
 
-  // Fetch all roles at once using useReadContracts to optimize RPC calls
+  // Fetch all roles at once
   const { data: rolesData, isLoading } = useReadContracts({
     contracts: [
       { address: ROLE_MANAGER_ADDRESS as `0x${string}`, abi: roleManagerJson.abi, functionName: 'hasRole', args: [DEFAULT_ADMIN_ROLE, address] },
@@ -32,26 +32,26 @@ export default function Home() {
     query: { enabled: isConnected && !!address }
   });
 
-  // Extract boolean results safely
   const isAdmin = rolesData?.[0]?.result ?? false;
   const isIssuer = rolesData?.[1]?.result ?? false;
   const isService = rolesData?.[2]?.result ?? false;
   const hasNoSpecialRole = !isAdmin && !isIssuer && !isService;
 
-  // Dynamically build the available tabs based on user permissions
   const availableTabs = [];
   if (isAdmin) availableTabs.push('admin');
   if (isIssuer) availableTabs.push('issuer');
   if (isService) availableTabs.push('service');
 
-  // Fallback to the first available tab if the current activeTab is not allowed or empty
   const currentTab = availableTabs.includes(activeTab) ? activeTab : availableTabs[0];
 
   return (
-    <div style={{ padding: '2rem', fontFamily: 'sans-serif', maxWidth: '1000px', margin: '0 auto' }}>
+    <div className="max-w-5xl mx-auto p-6 md:p-12 font-sans">
       
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3rem', paddingBottom: '1rem', borderBottom: '1px solid #e2e8f0' }}>
-        <h1 style={{ fontSize: '1.8rem', color: '#0f172a', margin: 0 }}>APTUS</h1>
+      {/* Elegant Header */}
+      <header className="flex flex-col md:flex-row justify-between items-center mb-12 pb-6 border-b border-slate-200">
+        <h1 className="text-3xl font-light tracking-widest text-slate-900 mb-6 md:mb-0">
+          APTUS
+        </h1>
         <ConnectButton />
       </header>
 
@@ -59,41 +59,52 @@ export default function Home() {
         {!isConnected && <WelcomeScreen />}
 
         {isConnected && isLoading && (
-          <div style={{ textAlign: 'center', padding: '3rem' }}>
-            <p style={{ color: '#64748b', fontSize: '1.1rem' }}>Scanning blockchain permissions...</p>
+          <div className="text-center py-20">
+            <p className="text-slate-500 text-lg animate-pulse font-light">
+              Scanning blockchain permissions...
+            </p>
           </div>
         )}
 
-        {/* Customer View (No special roles) */}
+        {/* Customer View */}
         {isConnected && !isLoading && hasNoSpecialRole && (
           <CustomerDashboard address={address} />
         )}
 
-        {/* Staff / Admin View (Has at least one special role) */}
+        {/* Staff / Admin View */}
         {isConnected && !isLoading && availableTabs.length > 0 && (
-          <div>
-            {/* Tab Navigation Menu (Only render if there are multiple roles to switch between) */}
+          <div className="animate-fade-in">
+            {/* Tab Navigation Menu */}
             {availableTabs.length > 1 && (
-              <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '1rem' }}>
+              <div className="flex gap-4 mb-8 pb-4 border-b border-slate-200 overflow-x-auto">
                 {isAdmin && (
-                  <button onClick={() => setActiveTab('admin')} style={getTabStyle(currentTab === 'admin', '#be185d')}>
+                  <button 
+                    onClick={() => setActiveTab('admin')} 
+                    className={`px-5 py-2.5 rounded-lg text-sm font-medium transition-all ${currentTab === 'admin' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-100'}`}
+                  >
                     Admin Control
                   </button>
                 )}
                 {isIssuer && (
-                  <button onClick={() => setActiveTab('issuer')} style={getTabStyle(currentTab === 'issuer', '#0f172a')}>
+                  <button 
+                    onClick={() => setActiveTab('issuer')} 
+                    className={`px-5 py-2.5 rounded-lg text-sm font-medium transition-all ${currentTab === 'issuer' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-100'}`}
+                  >
                     Issuer Panel
                   </button>
                 )}
                 {isService && (
-                  <button onClick={() => setActiveTab('service')} style={getTabStyle(currentTab === 'service', '#854d0e')}>
+                  <button 
+                    onClick={() => setActiveTab('service')} 
+                    className={`px-5 py-2.5 rounded-lg text-sm font-medium transition-all ${currentTab === 'service' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-100'}`}
+                  >
                     Service Panel
                   </button>
                 )}
               </div>
             )}
 
-            {/* Render the specific dashboard based on the active tab */}
+            {/* Render the specific dashboard */}
             {currentTab === 'admin' && <AdminDashboard />}
             {currentTab === 'issuer' && <IssuerDashboard address={address} />}
             {currentTab === 'service' && <ServiceDashboard address={address} />}
@@ -102,18 +113,4 @@ export default function Home() {
       </main>
     </div>
   );
-}
-
-// Helper function to dynamically style the tabs
-function getTabStyle(isActive: boolean, activeColor: string) {
-  return {
-    padding: '0.6rem 1.2rem',
-    border: 'none',
-    backgroundColor: isActive ? activeColor : 'transparent',
-    color: isActive ? 'white' : '#64748b',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontWeight: 'bold',
-    transition: 'all 0.2s ease-in-out'
-  };
 }
