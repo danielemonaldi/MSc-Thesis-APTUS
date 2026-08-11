@@ -14,13 +14,16 @@ contract RoleManager is AccessControl {
     // Role for "Manufacturer or authorised issuer": can register new assets and mint NFTs
     bytes32 public constant ISSUER_ROLE = keccak256("ISSUER_ROLE");
 
+    // Role for "Dealer or authorised reseller": can transfer ownership of assets and NFTs
+    bytes32 public constant DEALER_ROLE = keccak256("DEALER_ROLE");
+
     // Role for "Service centre or authorised maintainer": can add maintenance records
     bytes32 public constant SERVICE_ROLE = keccak256("SERVICE_ROLE");
 
     /**
      * @dev Constructor: sets the contract deployer as the System Administrator.
      * The administrator (System administrator / governance authority) can then
-     * assign the ISSUER and SERVICE roles to other wallets.
+     * assign the ISSUER, DEALER and SERVICE roles to other wallets.
      */
     constructor() {
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
@@ -38,5 +41,12 @@ contract RoleManager is AccessControl {
      */
     function grantServiceRole(address account) external onlyRole(DEFAULT_ADMIN_ROLE) {
         grantRole(SERVICE_ROLE, account);
+    }
+
+    /**
+     * @dev Utility function to grant the dealer role to an authorised entity (e.g., a watch dealer).
+     */
+    function grantDealerRole(address account) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        grantRole(DEALER_ROLE, account);
     }
 }

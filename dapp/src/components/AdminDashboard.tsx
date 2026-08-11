@@ -6,8 +6,10 @@ import { isAddress } from 'viem';
 import roleManagerJson from '../abi/RoleManager.json';
 import { ROLE_MANAGER_ADDRESS } from '../contracts';
 
+// Define role constants
 const ISSUER_ROLE = "0x114e74f6ea3bd819998f78687bfcb11b140da08e9b7d222fa9c1f1ba1f2aa122";
 const SERVICE_ROLE = "0xd8a7a79547af723ee3e12b59a480111268d8969c634e1a34a144d2c8b91d635b";
+const DEALER_ROLE = "0xcf75f067314df4d0527f2a9e12148d8bd7c8a3f7235b2171d24fa195d2c3ecb9";
 const DEFAULT_ADMIN_ROLE = "0x0000000000000000000000000000000000000000000000000000000000000000";
 
 export default function AdminDashboard() {
@@ -23,7 +25,8 @@ export default function AdminDashboard() {
     contracts: [
       { address: ROLE_MANAGER_ADDRESS as `0x${string}`, abi: roleManagerJson.abi, functionName: 'hasRole', args: [DEFAULT_ADMIN_ROLE, checkAddress] },
       { address: ROLE_MANAGER_ADDRESS as `0x${string}`, abi: roleManagerJson.abi, functionName: 'hasRole', args: [ISSUER_ROLE, checkAddress] },
-      { address: ROLE_MANAGER_ADDRESS as `0x${string}`, abi: roleManagerJson.abi, functionName: 'hasRole', args: [SERVICE_ROLE, checkAddress] }
+      { address: ROLE_MANAGER_ADDRESS as `0x${string}`, abi: roleManagerJson.abi, functionName: 'hasRole', args: [SERVICE_ROLE, checkAddress] },
+      { address: ROLE_MANAGER_ADDRESS as `0x${string}`, abi: roleManagerJson.abi, functionName: 'hasRole', args: [DEALER_ROLE, checkAddress] } // Aggiunto controllo Dealer
     ],
     query: { enabled: false }
   });
@@ -84,6 +87,9 @@ export default function AdminDashboard() {
               <div className={`p-3 rounded-lg border ${rolesData[1].result ? 'bg-green-50 border-green-200 text-green-800' : 'bg-white border-slate-200 text-slate-600'}`}>
                 🏭 <span className="font-medium ml-2">Issuer:</span> {rolesData[1].result ? 'Granted' : 'None'}
               </div>
+              <div className={`p-3 rounded-lg border ${rolesData[3].result ? 'bg-blue-50 border-blue-200 text-blue-800' : 'bg-white border-slate-200 text-slate-600'}`}>
+                🏬 <span className="font-medium ml-2">Dealer:</span> {rolesData[3].result ? 'Granted' : 'None'}
+              </div>
               <div className={`p-3 rounded-lg border ${rolesData[2].result ? 'bg-green-50 border-green-200 text-green-800' : 'bg-white border-slate-200 text-slate-600'}`}>
                 🔧 <span className="font-medium ml-2">Service:</span> {rolesData[2].result ? 'Granted' : 'None'}
               </div>
@@ -115,6 +121,7 @@ export default function AdminDashboard() {
                 className="w-full px-4 py-2 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-400 text-sm"
               >
                 <option value={ISSUER_ROLE}>Issuer (Brand Manufacturer)</option>
+                <option value={DEALER_ROLE}>Dealer (Authorized Retailer)</option>
                 <option value={SERVICE_ROLE}>Service (Maintenance Center)</option>
                 <option value={DEFAULT_ADMIN_ROLE}>Admin (Supreme Privilege)</option>
               </select>

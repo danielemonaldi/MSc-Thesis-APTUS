@@ -12,14 +12,15 @@ contract RoleManagerTest is Test {
     address public admin = address(this); // The test contract itself will act as the admin
     address public brandIssuer = address(0x1);
     address public serviceCentre = address(0x2);
-    address public unauthorizedUser = address(0x3);
+    address public dealerBoutique = address(0x3);
+    address public unauthorizedUser = address(0x4);
 
     function setUp() public {
         // This function is executed before each individual test
         roleManager = new RoleManager();
     }
 
-    function test_ConstructorAssignsAdminRole() public view{
+    function test_ConstructorAssignsAdminRole() public view {
         // Verify that the admin actually holds the DEFAULT_ADMIN_ROLE
         assertTrue(roleManager.hasRole(roleManager.DEFAULT_ADMIN_ROLE(), admin));
     }
@@ -30,6 +31,14 @@ contract RoleManagerTest is Test {
 
         // Verify that the brandIssuer now holds the ISSUER_ROLE
         assertTrue(roleManager.hasRole(roleManager.ISSUER_ROLE(), brandIssuer));
+    }
+
+    function test_AdminCanGrantDealerRole() public {
+        // The admin grants the role
+        roleManager.grantDealerRole(dealerBoutique);
+
+        // Verify that the dealerBoutique now holds the DEALER_ROLE
+        assertTrue(roleManager.hasRole(roleManager.DEALER_ROLE(), dealerBoutique));
     }
 
     function test_AdminCanGrantServiceRole() public {
@@ -49,5 +58,10 @@ contract RoleManagerTest is Test {
         
         // The unauthorized user tries to grant a role (and it must fail)
         roleManager.grantIssuerRole(brandIssuer);
+
+        // Test identical verification for the Dealer Role
+        vm.prank(unauthorizedUser);
+        vm.expectRevert();
+        roleManager.grantDealerRole(dealerBoutique);
     }
 }
