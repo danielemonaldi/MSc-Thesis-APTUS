@@ -15,60 +15,54 @@ contract AssetRegistryTest is Test {
     address public brandIssuer = address(0x1);
     address public watchBuyer = address(0x2);
     address public unauthorizedUser = address(0x3);
+    address public authorizedDealer = address(0x4);
     
     function setUp() public {
-
         // 1. Deploy the RoleManager contract
         roleManager = new RoleManager();
 
         // 2. Deploy the AssetRegistry, linking it to the RoleManager
         assetRegistry = new AssetRegistry(address(roleManager));
 
-        // 3. Grant the ISSUER_ROLE to the brandIssuer address
+        // 3. Grant roles
         roleManager.grantIssuerRole(brandIssuer);
+        roleManager.grantDealerRole(authorizedDealer);
     }
 
     function test_RevertWhen_UnauthorizedUserRegistersAsset() public {
-        
-        // Define the watch registration data
         uint256 tokenId = 1;
         string memory tokenUri = "ipfs://fake-metadata";
-
-        // Simulate a cryptographic hash of the physical asset record
         bytes32 assetHash = keccak256(abi.encodePacked("Fake Watch Data"));
 
-        // Tell Foundry that the next call comes from an unauthorized user
         vm.prank(unauthorizedUser);
-
-        // Expect the transaction to revert with the custom error CallerIsNotIssuer
         vm.expectRevert(AssetRegistry.CallerIsNotIssuer.selector);
 
-        // Attempt to register the asset (should fail)
         assetRegistry.registerAsset(watchBuyer, tokenId, tokenUri, assetHash);
     }
 
-    function test_IssuerCanRegisterAsset() public {
-
-        // Define the watch registration data
-        uint256 tokenId = 1001; // E.g., unique internal ID
+    function test_IssuerCanRegisterAndDistributeAsset() public {
+        uint256 tokenId = 1001;
         string memory tokenUri = "ipfs://QmWatchMetadata123";
-
-        // Simulate a cryptographic hash of the physical asset record
         bytes32 assetHash = keccak256(abi.encodePacked("Watch Model X", "SN:123456789"));
 
-        // Tell Foundry that the next call comes from the authorized brand issuer
+        // Step 1: Issuer mints the asset to their own vault
         vm.prank(brandIssuer);
+        assetRegistry.registerAsset(brandIssuer, tokenId, tokenUri, assetHash);
 
-        // Register the asset
-        assetRegistry.registerAsset(watchBuyer, tokenId, tokenUri, assetHash);
-
-        // Verify that the buyer is now the owner of the newly minted NFT
-        assertEq(assetRegistry.ownerOf(tokenId), watchBuyer);
-
-        // Verify that the metadata URI was saved correctly
+        assertEq(assetRegistry.ownerOf(tokenId), brandIssuer);
         assertEq(assetRegistry.tokenURI(tokenId), tokenUri);
-
-        // Verify that the cryptographic hash matches the on-chain record for integrity
         assertEq(assetRegistry.assetHashes(tokenId), assetHash);
+
+        // Step 2: B2B Distribution - Issuer transfers to Dealer
+        vm.prank(brandIssuer);
+        assetRegistry.safeTransferFrom(brandIssuer, authorizedDealer, tokenId);
+
+        assertEq(assetRegistry.ownerOf(tokenId), authorizedDealer);
+
+        // Step 3: Retail Sale - Dealer transfers to Final Customer
+        vm.prank(authorizedDealer);
+        assetRegistry.safeTransferFrom(authorizedDealer, watchBuyer, tokenId);
+
+        assertEq(assetRegistry.ownerOf(tokenId), watchBuyer);
     }
 }

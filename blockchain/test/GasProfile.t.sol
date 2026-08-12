@@ -12,14 +12,14 @@ import {OwnershipTransfer} from "../src/OwnershipTransfer.sol";
  * @notice Dedicated test suite for empirical validation and gas cost analysis.
  * @dev This contract isolates the "happy path" of the core business logic:
  *      1. Asset Registration (Minting)
- *      2. Two-Step Transfer Initiation
- *      3. Two-Step Transfer Acceptance
- *      4. Provenance Logging (Maintenance)
+ *      2. Direct Transfer (B2B Distribution & Retail Sale)
+ *      3. Two-Step Transfer Initiation (P2P Secondary Market)
+ *      4. Two-Step Transfer Acceptance (P2P Secondary Market)
+ *      5. Provenance Logging (Maintenance)
  *      
  *      By executing only successful transactions, it prevents Foundry's 
  *      `--gas-report` from skewing the average gas costs with the lower 
- *      consumption of reverted edge-case tests. This ensures accurate 
- *      real-world cost metrics for the Master's Thesis evaluation.
+ *      consumption of reverted edge-case tests.
  * 
  *      Usage: forge test --match-contract GasProfileTest --gas-report
  */
@@ -31,10 +31,10 @@ contract GasProfileTest is Test {
     OwnershipTransfer ownershipTransfer;
 
     address admin = address(1);
-    address buyer = address(2);
+    address dealer = address(2);
+    address buyer = address(3);
 
     function setUp() public {
-
         vm.startPrank(admin);
         
         // 1. Deploy Contracts
@@ -46,20 +46,30 @@ contract GasProfileTest is Test {
         // 2. Setup Roles
         roleManager.grantRole(roleManager.ISSUER_ROLE(), admin);
         roleManager.grantRole(roleManager.SERVICE_ROLE(), admin);
+        roleManager.grantRole(roleManager.DEALER_ROLE(), dealer);
         
         vm.stopPrank();
     }
 
     // Profiling Asset Registration (Minting)
     function testGas_RegisterAsset() public {
-
         vm.prank(admin);
         assetRegistry.registerAsset(admin, 1, "ipfs://metadata", bytes32(uint256(1)));
     }
 
+    // Profiling Direct Transfer (B2B Distribution or Retail Sale)
+    function testGas_DirectTransfer() public {
+        // Setup: Mint first
+        vm.prank(admin);
+        assetRegistry.registerAsset(admin, 1, "ipfs://metadata", bytes32(uint256(1)));
+
+        // Action to profile: Transfer from Issuer to Dealer
+        vm.prank(admin);
+        assetRegistry.safeTransferFrom(admin, dealer, 1);
+    }
+
     // Profiling Two-Step Transfer Initiation
     function testGas_InitiateTransfer() public {
-
         // Setup: Mint first
         vm.startPrank(admin);
         assetRegistry.registerAsset(admin, 1, "ipfs://metadata", bytes32(uint256(1)));
@@ -72,7 +82,6 @@ contract GasProfileTest is Test {
 
     // Profiling Two-Step Transfer Acceptance
     function testGas_AcceptTransfer() public {
-
         // Setup: Mint and Initiate
         vm.startPrank(admin);
         assetRegistry.registerAsset(admin, 1, "ipfs://metadata", bytes32(uint256(1)));
@@ -87,7 +96,6 @@ contract GasProfileTest is Test {
 
     // Profiling Provenance Logging
     function testGas_LogMaintenance() public {
-
         // Setup: Mint
         vm.prank(admin);
         assetRegistry.registerAsset(admin, 1, "ipfs://metadata", bytes32(uint256(1)));
