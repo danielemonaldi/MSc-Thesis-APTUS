@@ -23,30 +23,46 @@ contract RoleManagerTest is Test {
     function test_ConstructorAssignsAdminRole() public view {
         // Verify that the admin actually holds the DEFAULT_ADMIN_ROLE
         assertTrue(roleManager.hasRole(roleManager.DEFAULT_ADMIN_ROLE(), admin));
+        assertEq(roleManager.getEntityName(admin), "APTUS System Admin");
     }
 
     function test_AdminCanGrantIssuerRole() public {
-        // The admin grants the role
+        // The admin grants the role and assigns the KYB identity
         roleManager.grantIssuerRole(brandIssuer, "Rolex");
 
-        // Verify that the brandIssuer now holds the ISSUER_ROLE
+        // Verify that the brandIssuer now holds the ISSUER_ROLE and identity
         assertTrue(roleManager.hasRole(roleManager.ISSUER_ROLE(), brandIssuer));
+        assertEq(roleManager.getEntityName(brandIssuer), "Rolex");
     }
 
     function test_AdminCanGrantDealerRole() public {
         // The admin grants the role
         roleManager.grantDealerRole(dealerBoutique, "Boutique Paris");
 
-        // Verify that the dealerBoutique now holds the DEALER_ROLE
+        // Verify that the dealerBoutique now holds the DEALER_ROLE and identity
         assertTrue(roleManager.hasRole(roleManager.DEALER_ROLE(), dealerBoutique));
+        assertEq(roleManager.getEntityName(dealerBoutique), "Boutique Paris");
     }
 
     function test_AdminCanGrantServiceRole() public {
         // The admin grants the role
         roleManager.grantServiceRole(serviceCentre, "Service Geneva");
 
-        // Verify that the serviceCentre now holds the SERVICE_ROLE
+        // Verify that the serviceCentre now holds the SERVICE_ROLE and identity
         assertTrue(roleManager.hasRole(roleManager.SERVICE_ROLE(), serviceCentre));
+        assertEq(roleManager.getEntityName(serviceCentre), "Service Geneva");
+    }
+
+    function test_AdminCanRevokeIssuerRole() public {
+        // Grant first, then revoke
+        roleManager.grantIssuerRole(brandIssuer, "Rolex");
+        assertTrue(roleManager.hasRole(roleManager.ISSUER_ROLE(), brandIssuer));
+
+        roleManager.revokeIssuerRole(brandIssuer);
+
+        // Verify role is removed and entity name is cleared
+        assertFalse(roleManager.hasRole(roleManager.ISSUER_ROLE(), brandIssuer));
+        assertEq(roleManager.getEntityName(brandIssuer), "");
     }
 
     function test_RevertWhen_UnauthorizedUserGrantsRole() public {
@@ -63,5 +79,21 @@ contract RoleManagerTest is Test {
         vm.prank(unauthorizedUser);
         vm.expectRevert();
         roleManager.grantDealerRole(dealerBoutique, "Boutique Paris");
+    }
+
+    function test_IdentityPersistsWhenMultipleRolesHeld() public {
+        // Assegniamo due ruoli diversi allo stesso wallet con lo stesso nome
+        roleManager.grantIssuerRole(brandIssuer, "Rolex Group");
+        roleManager.grantServiceRole(brandIssuer, "Rolex Group");
+
+        // Verifico che l'identità sia impostata
+        assertEq(roleManager.getEntityName(brandIssuer), "Rolex Group");
+
+        // Revoco solo il ruolo di Service
+        roleManager.revokeServiceRole(brandIssuer);
+
+        // Il wallet ha ancora il ruolo Issuer, quindi il nome "Rolex Group" NON deve essere stato cancellato!
+        assertTrue(roleManager.hasRole(roleManager.ISSUER_ROLE(), brandIssuer));
+        assertEq(roleManager.getEntityName(brandIssuer), "Rolex Group");
     }
 }

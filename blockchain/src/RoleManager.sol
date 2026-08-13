@@ -68,4 +68,45 @@ contract RoleManager is AccessControl {
     function getEntityName(address account) external view returns (string memory) {
         return entityNames[account];
     }
+
+    /**
+     * @dev Revokes the issuer role and clears the associated business identity 
+     * only if no other ecosystem roles are held by this account.
+     */
+    function revokeIssuerRole(address account) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        revokeRole(ISSUER_ROLE, account);
+        _checkAndClearIdentity(account);
+    }
+
+    /**
+     * @dev Revokes the dealer role and clears the associated business identity 
+     * only if no other ecosystem roles are held by this account.
+     */
+    function revokeDealerRole(address account) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        revokeRole(DEALER_ROLE, account);
+        _checkAndClearIdentity(account);
+    }
+
+    /**
+     * @dev Revokes the service role and clears the associated business identity 
+     * only if no other ecosystem roles are held by this account.
+     */
+    function revokeServiceRole(address account) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        revokeRole(SERVICE_ROLE, account);
+        _checkAndClearIdentity(account);
+    }
+
+    /**
+     * @dev Internal helper to clear the entity name only if the account has lost all active roles.
+     */
+    function _checkAndClearIdentity(address account) internal {
+        bool hasAnyRole = hasRole(ISSUER_ROLE, account) || 
+                          hasRole(DEALER_ROLE, account) || 
+                          hasRole(SERVICE_ROLE, account);
+        
+        // If the account has no roles left, wipe its registered entity name
+        if (!hasAnyRole) {
+            entityNames[account] = "";
+        }
+    }
 }
