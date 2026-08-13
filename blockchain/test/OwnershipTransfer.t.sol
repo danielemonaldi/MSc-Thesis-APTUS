@@ -29,7 +29,7 @@ contract OwnershipTransferTest is Test {
         transferManager = new OwnershipTransfer(address(assetRegistry));
 
         // 2. Setup the initial environment: grant roles and mint a watch to the seller
-        roleManager.grantIssuerRole(brandIssuer);
+        roleManager.grantIssuerRole(brandIssuer, "Rolex");
 
         // 3. The brand issuer registers a new asset (NFT) to the seller
         vm.prank(brandIssuer);
@@ -37,7 +37,8 @@ contract OwnershipTransferTest is Test {
             seller,
             TOKEN_ID,
             "ipfs://watch-metadata",
-            keccak256(abi.encodePacked("Watch SN:123"))
+            keccak256(abi.encodePacked("Watch SN:123")),
+            "Rolex"
         );
     }
 

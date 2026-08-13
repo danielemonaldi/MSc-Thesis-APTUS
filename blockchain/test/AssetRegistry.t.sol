@@ -24,9 +24,9 @@ contract AssetRegistryTest is Test {
         // 2. Deploy the AssetRegistry, linking it to the RoleManager
         assetRegistry = new AssetRegistry(address(roleManager));
 
-        // 3. Grant roles
-        roleManager.grantIssuerRole(brandIssuer);
-        roleManager.grantDealerRole(authorizedDealer);
+        // 3. Grant roles WITH identity (KYB)
+        roleManager.grantIssuerRole(brandIssuer, "Rolex");
+        roleManager.grantDealerRole(authorizedDealer, "Boutique Milano");
     }
 
     function test_RevertWhen_UnauthorizedUserRegistersAsset() public {
@@ -37,7 +37,8 @@ contract AssetRegistryTest is Test {
         vm.prank(unauthorizedUser);
         vm.expectRevert(AssetRegistry.CallerIsNotIssuer.selector);
 
-        assetRegistry.registerAsset(watchBuyer, tokenId, tokenUri, assetHash);
+        // The unauthorized user tries to mint. They don't have the role, so it reverts immediately.
+        assetRegistry.registerAsset(watchBuyer, tokenId, tokenUri, assetHash, "Rolex");
     }
 
     function test_IssuerCanRegisterAndDistributeAsset() public {
@@ -47,7 +48,8 @@ contract AssetRegistryTest is Test {
 
         // Step 1: Issuer mints the asset to their own vault
         vm.prank(brandIssuer);
-        assetRegistry.registerAsset(brandIssuer, tokenId, tokenUri, assetHash);
+        // We pass the exact brand name granted in the setUp to pass the KYB check
+        assetRegistry.registerAsset(brandIssuer, tokenId, tokenUri, assetHash, "Rolex");
 
         assertEq(assetRegistry.ownerOf(tokenId), brandIssuer);
         assertEq(assetRegistry.tokenURI(tokenId), tokenUri);

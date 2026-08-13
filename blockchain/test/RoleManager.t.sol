@@ -27,7 +27,7 @@ contract RoleManagerTest is Test {
 
     function test_AdminCanGrantIssuerRole() public {
         // The admin grants the role
-        roleManager.grantIssuerRole(brandIssuer);
+        roleManager.grantIssuerRole(brandIssuer, "Rolex");
 
         // Verify that the brandIssuer now holds the ISSUER_ROLE
         assertTrue(roleManager.hasRole(roleManager.ISSUER_ROLE(), brandIssuer));
@@ -35,7 +35,7 @@ contract RoleManagerTest is Test {
 
     function test_AdminCanGrantDealerRole() public {
         // The admin grants the role
-        roleManager.grantDealerRole(dealerBoutique);
+        roleManager.grantDealerRole(dealerBoutique, "Boutique Paris");
 
         // Verify that the dealerBoutique now holds the DEALER_ROLE
         assertTrue(roleManager.hasRole(roleManager.DEALER_ROLE(), dealerBoutique));
@@ -43,7 +43,7 @@ contract RoleManagerTest is Test {
 
     function test_AdminCanGrantServiceRole() public {
         // The admin grants the role
-        roleManager.grantServiceRole(serviceCentre);
+        roleManager.grantServiceRole(serviceCentre, "Service Geneva");
 
         // Verify that the serviceCentre now holds the SERVICE_ROLE
         assertTrue(roleManager.hasRole(roleManager.SERVICE_ROLE(), serviceCentre));
@@ -57,11 +57,11 @@ contract RoleManagerTest is Test {
         vm.expectRevert();
         
         // The unauthorized user tries to grant a role (and it must fail)
-        roleManager.grantIssuerRole(brandIssuer);
+        roleManager.grantIssuerRole(brandIssuer, "Rolex");
 
         // Test identical verification for the Dealer Role
         vm.prank(unauthorizedUser);
         vm.expectRevert();
-        roleManager.grantDealerRole(dealerBoutique);
+        roleManager.grantDealerRole(dealerBoutique, "Boutique Paris");
     }
 }

@@ -17,7 +17,7 @@ contract ProvenanceManager {
     // Struct defining a single event in the asset's lifecycle
     struct AssetEvent {
         uint256 timestamp;
-        string eventType; // e.g., "MAINTENANCE", "STOLEN", "RECOVERY"
+        string eventType; // e.g., "CREATED", "MAINTENANCE", "STOLEN", "TRANSFERRED"
         string details;   // Additional details about the event
         address reporter; // Address of the entity reporting the event
     }
@@ -36,6 +36,25 @@ contract ProvenanceManager {
     constructor(address _assetRegistry, address _roleManager) {
         assetRegistry = AssetRegistry(_assetRegistry);
         roleManager = RoleManager(_roleManager);
+    }
+
+    /**
+     * @dev System function called automatically by the AssetRegistry during minting and transfers.
+     * Ensures that creation and ownership changes are atomically logged without manual intervention.
+     * 
+     * @param tokenId The ID of the token/asset.
+     * @param eventType The type of system event (e.g., "CREATED" or "TRANSFERRED").
+     * @param details Auto-generated description of the event.
+     * @param actor The address of the user who triggered the system event.
+     */
+    function logSystemEvent(uint256 tokenId, string memory eventType, string memory details, address actor) external {
+        // Only the AssetRegistry smart contract is allowed to call this function
+        if (msg.sender != address(assetRegistry)) {
+            revert NotAuthorized();
+        }
+        
+        // Log the system event in the asset's history
+        _addEvent(tokenId, eventType, details, actor);
     }
 
     /**

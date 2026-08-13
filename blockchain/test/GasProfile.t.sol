@@ -43,10 +43,13 @@ contract GasProfileTest is Test {
         provenanceManager = new ProvenanceManager(address(assetRegistry), address(roleManager));
         ownershipTransfer = new OwnershipTransfer(address(assetRegistry));
 
-        // 2. Setup Roles
-        roleManager.grantRole(roleManager.ISSUER_ROLE(), admin);
-        roleManager.grantRole(roleManager.SERVICE_ROLE(), admin);
-        roleManager.grantRole(roleManager.DEALER_ROLE(), dealer);
+        // LINK THE CONTRACTS FOR AUTOMATIC PROVENANCE TRACKING
+        assetRegistry.setProvenanceManager(address(provenanceManager));
+
+        // 2. Setup Roles WITH Identities (using the new wrapper functions)
+        roleManager.grantIssuerRole(admin, "Rolex");
+        roleManager.grantServiceRole(admin, "Rolex");
+        roleManager.grantDealerRole(dealer, "Boutique Milano");
         
         vm.stopPrank();
     }
@@ -54,14 +57,14 @@ contract GasProfileTest is Test {
     // Profiling Asset Registration (Minting)
     function testGas_RegisterAsset() public {
         vm.prank(admin);
-        assetRegistry.registerAsset(admin, 1, "ipfs://metadata", bytes32(uint256(1)));
+        assetRegistry.registerAsset(admin, 1, "ipfs://metadata", bytes32(uint256(1)), "Rolex");
     }
 
     // Profiling Direct Transfer (B2B Distribution or Retail Sale)
     function testGas_DirectTransfer() public {
         // Setup: Mint first
         vm.prank(admin);
-        assetRegistry.registerAsset(admin, 1, "ipfs://metadata", bytes32(uint256(1)));
+        assetRegistry.registerAsset(admin, 1, "ipfs://metadata", bytes32(uint256(1)), "Rolex");
 
         // Action to profile: Transfer from Issuer to Dealer
         vm.prank(admin);
@@ -72,7 +75,7 @@ contract GasProfileTest is Test {
     function testGas_InitiateTransfer() public {
         // Setup: Mint first
         vm.startPrank(admin);
-        assetRegistry.registerAsset(admin, 1, "ipfs://metadata", bytes32(uint256(1)));
+        assetRegistry.registerAsset(admin, 1, "ipfs://metadata", bytes32(uint256(1)), "Rolex");
         assetRegistry.approve(address(ownershipTransfer), 1);
         
         // Action to profile
@@ -84,7 +87,7 @@ contract GasProfileTest is Test {
     function testGas_AcceptTransfer() public {
         // Setup: Mint and Initiate
         vm.startPrank(admin);
-        assetRegistry.registerAsset(admin, 1, "ipfs://metadata", bytes32(uint256(1)));
+        assetRegistry.registerAsset(admin, 1, "ipfs://metadata", bytes32(uint256(1)), "Rolex");
         assetRegistry.approve(address(ownershipTransfer), 1);
         ownershipTransfer.initiateTransfer(1, buyer);
         vm.stopPrank();
@@ -98,7 +101,7 @@ contract GasProfileTest is Test {
     function testGas_LogMaintenance() public {
         // Setup: Mint
         vm.prank(admin);
-        assetRegistry.registerAsset(admin, 1, "ipfs://metadata", bytes32(uint256(1)));
+        assetRegistry.registerAsset(admin, 1, "ipfs://metadata", bytes32(uint256(1)), "Rolex");
 
         // Action to profile
         vm.prank(admin);

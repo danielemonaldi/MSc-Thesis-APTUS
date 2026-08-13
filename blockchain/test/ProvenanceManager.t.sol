@@ -30,8 +30,8 @@ contract ProvenanceManagerTest is Test {
         provenanceManager = new ProvenanceManager(address(assetRegistry), address(roleManager));
 
         // 2. Grant appropriate roles
-        roleManager.grantIssuerRole(brandIssuer);
-        roleManager.grantServiceRole(serviceCentre);
+        roleManager.grantIssuerRole(brandIssuer, "Rolex");
+        roleManager.grantServiceRole(serviceCentre, "Service Geneva");
 
         // 3. Register (mint) a test asset to the watchOwner to prepare the environment
         vm.prank(brandIssuer);
@@ -39,7 +39,8 @@ contract ProvenanceManagerTest is Test {
             watchOwner,
             TOKEN_ID,
             "ipfs://watch-metadata",
-            keccak256(abi.encodePacked("Luxury Watch Model Z"))
+            keccak256(abi.encodePacked("Luxury Watch Model Z")),
+            "Rolex"
         );
     }
 

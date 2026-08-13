@@ -6,6 +6,7 @@ import {AccessControl} from "openzeppelin-contracts/contracts/access/AccessContr
 /**
  * @title RoleManager
  * @dev Manages roles and permissions for the Authenticity & Provenance Traceability Universal System (APTUS) framework.
+ * Includes an Identity Registry (KYB) to associate blockchain addresses with verified real-world business identities.
  */
 contract RoleManager is AccessControl {
     
@@ -20,6 +21,9 @@ contract RoleManager is AccessControl {
     // Role for "Service centre or authorised maintainer": can add maintenance records
     bytes32 public constant SERVICE_ROLE = keccak256("SERVICE_ROLE");
 
+    // Mapping to store the verified business name associated with a wallet
+    mapping(address => string) private entityNames;
+
     /**
      * @dev Constructor: sets the contract deployer as the System Administrator.
      * The administrator (System administrator / governance authority) can then
@@ -27,26 +31,41 @@ contract RoleManager is AccessControl {
      */
     constructor() {
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
+        entityNames[msg.sender] = "APTUS System Admin"; // Automatically assign an identity to the admin
     }
 
     /**
-     * @dev Utility function to grant the issuer role to an authorised entity (e.g., a watch brand).
+     * @dev Utility function to grant the issuer role to an authorised entity (e.g., a watch brand)
+     * and securely assign its real-world business name.
      */
-    function grantIssuerRole(address account) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function grantIssuerRole(address account, string memory companyName) external onlyRole(DEFAULT_ADMIN_ROLE) {
         grantRole(ISSUER_ROLE, account);
+        entityNames[account] = companyName;
     }
 
     /**
-     * @dev Utility function to grant the service role to an authorised entity (e.g., a watch service centre).
+     * @dev Utility function to grant the service role to an authorised entity (e.g., a watch service centre)
+     * and securely assign its real-world business name.
      */
-    function grantServiceRole(address account) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function grantServiceRole(address account, string memory companyName) external onlyRole(DEFAULT_ADMIN_ROLE) {
         grantRole(SERVICE_ROLE, account);
+        entityNames[account] = companyName;
     }
 
     /**
-     * @dev Utility function to grant the dealer role to an authorised entity (e.g., a watch dealer).
+     * @dev Utility function to grant the dealer role to an authorised entity (e.g., a watch dealer)
+     * and securely assign its real-world business name.
      */
-    function grantDealerRole(address account) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function grantDealerRole(address account, string memory companyName) external onlyRole(DEFAULT_ADMIN_ROLE) {
         grantRole(DEALER_ROLE, account);
+        entityNames[account] = companyName;
+    }
+
+    /**
+     * @dev Retrieves the verified business name of a wallet.
+     * Can be used by other contracts (like the AssetRegistry) or the Frontend.
+     */
+    function getEntityName(address account) external view returns (string memory) {
+        return entityNames[account];
     }
 }
