@@ -83,27 +83,23 @@ contract AssetRegistry is ERC721URIStorage {
             revert CallerIsNotIssuer();
         }
 
-        // 2. ENFORCE IDENTITY (KYB): Check if the submitted brand matches the one assigned to the wallet
-        string memory authorizedBrand = roleManager.getEntityName(msg.sender);
-        if (keccak256(abi.encodePacked(brand)) != keccak256(abi.encodePacked(authorizedBrand))) {
-            revert InvalidBrandIdentity();
-        }
-
-        // 3. Mint the unique NFT to the specified address
+        // 2. Mint the unique NFT to the specified address
         _mint(to, tokenId);
 
-        // 4. Associate the token with its metadata URI
+        // 3. Associate the token with its metadata URI
         _setTokenURI(tokenId, tokenUri);
 
-        // 5. Store the asset hash on-chain to prevent off-chain metadata tampering
+        // 4. Store the asset hash on-chain
         assetHashes[tokenId] = assetHash;
 
-        // 6. Automatically record the creation event if the Provenance Manager is linked
+        // 5. Automatically record the creation event passing the entity name of the issuer
         if (address(provenanceManager) != address(0)) {
+            string memory issuerName = roleManager.getEntityName(msg.sender);
+
             provenanceManager.logSystemEvent(
                 tokenId, 
                 "CREATED", 
-                "Asset officially minted and registered by the Manufacturer.", 
+                string(abi.encodePacked("Asset officially minted and registered by ", issuerName, " (Brand: ", brand, ").")), 
                 msg.sender
             );
         }
