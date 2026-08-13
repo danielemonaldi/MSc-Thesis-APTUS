@@ -15,23 +15,28 @@ import DealerDashboard from '../components/DealerDashboard';
 import ServiceDashboard from '../components/ServiceDashboard';
 import CustomerDashboard from '../components/CustomerDashboard';
 
-// Define role constants
+// Define role constants matching the RoleManager contract
 const ISSUER_ROLE = "0x114e74f6ea3bd819998f78687bfcb11b140da08e9b7d222fa9c1f1ba1f2aa122";
 const SERVICE_ROLE = "0xd8a7a79547af723ee3e12b59a480111268d8969c634e1a34a144d2c8b91d635b";
 const DEALER_ROLE = "0xcf75f067314df4d0527f2a9e12148d8bd7c8a3f7235b2171d24fa195d2c3ecb9";
 const DEFAULT_ADMIN_ROLE = "0x0000000000000000000000000000000000000000000000000000000000000000";
 
+/**
+ * @title Home
+ * @dev Main application entry point managing role-based UI routing and global entity identity display.
+ */
 export default function Home() {
   const { address, isConnected } = useAccount();
   const [activeTab, setActiveTab] = useState<string>('');
 
-  // Fetch role data for the connected user
+  // Fetch role data and entity name for the connected user
   const { data: rolesData, isLoading } = useReadContracts({
     contracts: [
       { address: ROLE_MANAGER_ADDRESS as `0x${string}`, abi: roleManagerJson.abi, functionName: 'hasRole', args: [DEFAULT_ADMIN_ROLE, address] },
       { address: ROLE_MANAGER_ADDRESS as `0x${string}`, abi: roleManagerJson.abi, functionName: 'hasRole', args: [ISSUER_ROLE, address] },
       { address: ROLE_MANAGER_ADDRESS as `0x${string}`, abi: roleManagerJson.abi, functionName: 'hasRole', args: [SERVICE_ROLE, address] },
-      { address: ROLE_MANAGER_ADDRESS as `0x${string}`, abi: roleManagerJson.abi, functionName: 'hasRole', args: [DEALER_ROLE, address] }
+      { address: ROLE_MANAGER_ADDRESS as `0x${string}`, abi: roleManagerJson.abi, functionName: 'hasRole', args: [DEALER_ROLE, address] },
+      { address: ROLE_MANAGER_ADDRESS as `0x${string}`, abi: roleManagerJson.abi, functionName: 'getEntityName', args: [address] }
     ],
     query: { enabled: isConnected && !!address }
   });
@@ -40,6 +45,7 @@ export default function Home() {
   const isIssuer = rolesData?.[1]?.result ?? false;
   const isService = rolesData?.[2]?.result ?? false;
   const isDealer = rolesData?.[3]?.result ?? false;
+  const entityName = (rolesData?.[4]?.result as string) || '';
   
   const hasNoSpecialRole = !isAdmin && !isIssuer && !isService && !isDealer;
 
@@ -57,11 +63,30 @@ export default function Home() {
   return (
     <div className="max-w-5xl mx-auto p-6 md:p-12 font-sans">
       
-      <header className="flex flex-col md:flex-row justify-between items-center mb-12 pb-6 border-b border-slate-200">
-        <h1 className="text-3xl font-light tracking-widest text-slate-900 mb-6 md:mb-0">
-          APTUS
-        </h1>
-        <ConnectButton />
+      {/* Global Top Header with Highlighted Entity Identity */}
+      <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 pb-6 border-b border-slate-200 gap-4">
+        <div>
+          <h1 className="text-3xl font-light tracking-widest text-slate-900 mb-1">
+            APTUS
+          </h1>
+          <p className="text-xs text-slate-400 font-light tracking-wide uppercase">Blockchain Luxury Watch Passport</p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-4">
+          {/* Highlighted Verified Entity Badge */}
+          {isConnected && (
+            <div className="bg-slate-50 border border-slate-200 px-4 py-2 rounded-xl flex items-center space-x-2 shadow-sm">
+              <span className="text-base">🏢</span>
+              <div>
+                <p className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Verified Entity</p>
+                <p className="text-sm font-bold text-slate-900">
+                  {entityName && entityName !== '' ? entityName : 'Private Collector'}
+                </p>
+              </div>
+            </div>
+          )}
+          <ConnectButton />
+        </div>
       </header>
 
       <main>

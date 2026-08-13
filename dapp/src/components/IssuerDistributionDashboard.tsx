@@ -11,14 +11,22 @@ interface OwnedAsset {
   serial: string;
   name: string;
   image: string;
+  metadata: any;
 }
 
+/**
+ * @title IssuerDistributionDashboard
+ * @dev B2B distribution panel featuring serial search, clean asset naming, and correctly rendered images.
+ */
 export default function IssuerDistributionDashboard({ address }: { address: string | undefined }) {
   const publicClient = usePublicClient();
 
   const [myAssets, setMyAssets] = useState<OwnedAsset[]>([]);
   const [isScanning, setIsScanning] = useState(false);
-  const [selectedTokenId, setSelectedTokenId] = useState<number | null>(null);
+  const [searchSerial, setSearchSerial] = useState('');
+  
+  // Transfer Modal State
+  const [selectedAsset, setSelectedAsset] = useState<OwnedAsset | null>(null);
   const [dealerAddress, setDealerAddress] = useState('');
   const [transferStatusMsg, setTransferStatusMsg] = useState('');
 
@@ -29,44 +37,67 @@ export default function IssuerDistributionDashboard({ address }: { address: stri
     if (!publicClient || !address) return;
 
     setIsScanning(true);
-    const assets: OwnedAsset[] = [];
+    const tokenIds = Array.from({ length: 50 }, (_, i) => i + 1);
 
-    for (let i = 1; i <= 50; i++) {
-      try {
-        const owner = await publicClient.readContract({
-          address: ASSET_REGISTRY_ADDRESS as `0x${string}`,
-          abi: assetRegistryJson.abi,
-          functionName: 'ownerOf',
-          args: [BigInt(i)]
-        });
-
-        if ((owner as string).toLowerCase() === address.toLowerCase()) {
-          const uri = await publicClient.readContract({
+    const results = await Promise.all(
+      tokenIds.map(async (tokenId) => {
+        try {
+          const owner = await publicClient.readContract({
             address: ASSET_REGISTRY_ADDRESS as `0x${string}`,
             abi: assetRegistryJson.abi,
-            functionName: 'tokenURI',
-            args: [BigInt(i)]
+            functionName: 'ownerOf',
+            args: [BigInt(tokenId)]
           });
 
-          const gatewayUrl = (uri as string).replace('ipfs://', 'https://gateway.pinata.cloud/ipfs/');
-          const res = await fetch(gatewayUrl);
-          const metadata = await res.json();
+          if ((owner as string).toLowerCase() === address.toLowerCase()) {
+            const uri = await publicClient.readContract({
+              address: ASSET_REGISTRY_ADDRESS as `0x${string}`,
+              abi: assetRegistryJson.abi,
+              functionName: 'tokenURI',
+              args: [BigInt(tokenId)]
+            });
 
-          const physicalSerial = metadata.attributes?.find((attr: any) => attr.trait_type === 'Physical Serial')?.value || `SN-${i}`;
+            const gatewayUrl = (uri as string).replace('ipfs://', 'https://gateway.pinata.cloud/ipfs/');
+            const res = await fetch(gatewayUrl);
+            const metadata = await res.json();
+            
+            // Extract physical serial from attributes or fallback
+            const physicalSerial = metadata.attributes?.find((attr: any) => attr.trait_type === 'Physical Serial')?.value || `SN-${tokenId}`;
 
-          assets.push({
-            tokenId: i,
-            serial: physicalSerial,
-            name: metadata.name || 'Watch Asset',
-            image: metadata.image ? metadata.image.replace('ipfs://', 'https://gateway.pinata.cloud/ipfs/') : ''
-          });
+            // Clean up the display name to remove any trailing serial numbers if present in metadata name
+            let cleanName = metadata.name || 'Watch Asset';
+            if (cleanName.includes(' - SN:')) {
+              cleanName = cleanName.split(' - SN:')[0];
+            }
+
+            // Robustly format IPFS gateway URL for the image
+            let imageGateway = '';
+            if (metadata.image) {
+              if (metadata.image.startsWith('ipfs://')) {
+                imageGateway = metadata.image.replace('ipfs://', 'https://gateway.pinata.cloud/ipfs/');
+              } else if (metadata.image.startsWith('http')) {
+                imageGateway = metadata.image;
+              } else {
+                imageGateway = `https://gateway.pinata.cloud/ipfs/${metadata.image}`;
+              }
+            }
+
+            return {
+              tokenId,
+              serial: physicalSerial,
+              name: cleanName,
+              image: imageGateway,
+              metadata
+            };
+          }
+        } catch (error) {
+          return null;
         }
-      } catch (error) {
-        break;
-      }
-    }
+        return null;
+      })
+    );
 
-    setMyAssets(assets);
+    setMyAssets(results.filter((a): a is OwnedAsset => a !== null));
     setIsScanning(false);
   };
 
@@ -74,9 +105,14 @@ export default function IssuerDistributionDashboard({ address }: { address: stri
     loadIssuerInventory();
   }, [address, publicClient, isTransferConfirmed]);
 
+  // Filter assets based on serial search input
+  const filteredAssets = myAssets.filter(asset => 
+    asset.serial.toLowerCase().includes(searchSerial.trim().toLowerCase())
+  );
+
   const handleTransferToDealer = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (selectedTokenId === null) return alert("Please select a watch by its serial number.");
+    if (!selectedAsset) return;
     if (!isAddress(dealerAddress)) return alert("Invalid Dealer Ethereum Address");
 
     try {
@@ -85,7 +121,7 @@ export default function IssuerDistributionDashboard({ address }: { address: stri
         address: ASSET_REGISTRY_ADDRESS as `0x${string}`,
         abi: assetRegistryJson.abi,
         functionName: 'safeTransferFrom',
-        args: [address, dealerAddress, BigInt(selectedTokenId)],
+        args: [address, dealerAddress, BigInt(selectedAsset.tokenId)],
       });
       setTransferStatusMsg('✍️ Please sign the transfer in MetaMask...');
     } catch (error: any) {
@@ -94,73 +130,140 @@ export default function IssuerDistributionDashboard({ address }: { address: stri
     }
   };
 
+  const closeModal = () => {
+    setSelectedAsset(null);
+    setDealerAddress('');
+    setTransferStatusMsg('');
+  };
+
   return (
-    <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-100 mt-6 max-w-3xl mx-auto">
-      <h3 className="text-2xl font-light text-slate-900 mb-1">B2B Distribution Panel</h3>
-      <p className="text-slate-500 mb-6 font-light text-sm">Select a minted watch from your vault by its serial number to distribute it to an authorized dealer.</p>
+    <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-100 mt-6 max-w-5xl mx-auto">
+      
+      {/* Header with Search Bar */}
+      <div className="mb-8 pb-6 border-b border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center">
+        <div>
+          <h2 className="text-2xl font-light text-slate-900 mb-1">B2B Distribution</h2>
+          <p className="text-slate-500 font-light text-sm">Manage inventory and transfer watches to authorized dealers.</p>
+        </div>
+        
+        <div className="w-full md:w-72 mt-4 md:mt-0">
+          <input 
+            type="text"
+            placeholder="🔍 Search by serial number..."
+            value={searchSerial}
+            onChange={e => setSearchSerial(e.target.value)}
+            className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-400 text-sm uppercase font-mono"
+          />
+        </div>
+      </div>
 
       {isScanning && (
-        <div className="text-center py-12">
-          <div className="w-6 h-6 border-2 border-slate-200 border-t-slate-800 rounded-full animate-spin mx-auto mb-2"></div>
-          <p className="text-slate-400 text-xs">Scanning vault inventory...</p>
+        <div className="text-center py-16">
+          <div className="w-8 h-8 border-4 border-slate-200 border-t-slate-800 rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-slate-400 text-sm font-light">Scanning vault inventory...</p>
         </div>
       )}
 
       {!isScanning && myAssets.length === 0 && (
-        <div className="text-center py-12 bg-slate-50 rounded-xl border border-dashed border-slate-200">
-          <p className="text-slate-400 text-sm">No assets available in your vault to distribute.</p>
+        <div className="text-center py-16 bg-slate-50 rounded-xl border border-dashed border-slate-300">
+          <span className="text-4xl mb-4 block">📦</span>
+          <h3 className="text-lg font-medium text-slate-800 mb-2">Your vault is empty</h3>
+          <p className="text-sm text-slate-500">No assets available in your vault to distribute.</p>
         </div>
       )}
 
+      {/* Symmetric Wallet Grid */}
       {!isScanning && myAssets.length > 0 && (
-        <form onSubmit={handleTransferToDealer} className="space-y-4">
-          <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Select Asset by Serial Number</label>
-            <select 
-              required
-              value={selectedTokenId || ''}
-              onChange={e => setSelectedTokenId(Number(e.target.value))}
-              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-400 text-sm"
-            >
-              <option value="">-- Choose Watch Serial --</option>
-              {myAssets.map((asset) => (
-                <option key={asset.tokenId} value={asset.tokenId}>
-                  SN: {asset.serial} — {asset.name}
-                </option>
-              ))}
-            </select>
-          </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {filteredAssets.map((asset) => (
+            <div key={asset.tokenId} className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow flex flex-col">
+              
+              {/* Image Container with fixed dimensions and clean rendering */}
+              <div className="bg-slate-50 h-52 w-full flex items-center justify-center border-b border-slate-100 overflow-hidden relative p-4">
+                {asset.image ? (
+                  <img src={asset.image} alt={asset.name} className="max-h-full max-w-full object-contain drop-shadow-sm" />
+                ) : (
+                  <span className="text-5xl">⌚</span>
+                )}
+                <span className="absolute top-2 right-2 bg-black/70 text-white text-[10px] font-bold px-2 py-1 rounded">
+                  #{asset.tokenId}
+                </span>
+              </div>
+              
+              {/* Card Content - Clean name and distinct serial layout */}
+              <div className="p-5 flex-1 flex flex-col">
+                <h3 className="text-lg font-medium text-slate-900 mb-1">{asset.name}</h3>
+                
+                <div className="mb-6">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-0.5">Physical Serial</span>
+                  <span className="text-xs font-mono font-semibold bg-slate-100 text-slate-700 px-2 py-1 rounded inline-block">
+                    {asset.serial}
+                  </span>
+                </div>
 
-          <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Dealer Wallet Address</label>
-            <input 
-              required 
-              placeholder="0x..." 
-              value={dealerAddress} 
-              onChange={e => setDealerAddress(e.target.value)} 
-              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-400 text-sm" 
-            />
-          </div>
-
-          <button 
-            type="submit" 
-            disabled={isTransferPending || isTransferConfirming} 
-            className="w-full py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium text-sm disabled:opacity-50 shadow-sm"
-          >
-            {isTransferPending || isTransferConfirming ? 'Processing Transfer...' : 'Transfer to Dealer Vault'}
-          </button>
-        </form>
+                <button 
+                  onClick={() => setSelectedAsset(asset)}
+                  className="w-full mt-auto py-2.5 bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors font-medium text-xs shadow-sm"
+                >
+                  Transfer to Dealer
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
       )}
 
-      <div className="mt-4 text-sm font-medium">
-        {transferStatusMsg && <p className="text-slate-600 p-4 bg-slate-50 rounded-lg border border-slate-200">{transferStatusMsg}</p>}
-        {isTransferConfirmed && (
-          <div className="text-blue-700 mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200 flex flex-col items-center">
-            <p className="mb-2">🤝 Asset successfully transferred to the dealer!</p>
-            <a href={`https://sepolia.etherscan.io/tx/${txHashTransfer}`} target="_blank" rel="noreferrer" className="text-blue-600 underline text-xs">View on Etherscan</a>
+      {/* Transfer Modal */}
+      {selectedAsset !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 animate-fade-in">
+            
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-medium text-slate-900">B2B Handover</h3>
+              <button onClick={closeModal} className="text-slate-400 hover:text-slate-600 text-xl font-bold">&times;</button>
+            </div>
+            
+            <p className="text-sm text-slate-500 mb-2">
+              Transferring <span className="font-bold text-slate-800">{selectedAsset.name}</span> to an authorized dealer.
+            </p>
+            <p className="text-xs font-mono bg-slate-50 border border-slate-200 p-2 rounded text-slate-600 mb-6">
+              Serial: {selectedAsset.serial} (ID: #{selectedAsset.tokenId})
+            </p>
+
+            <form onSubmit={handleTransferToDealer} className="space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-slate-500 mb-1">Dealer Wallet Address</label>
+                <input 
+                  required 
+                  placeholder="0x..." 
+                  value={dealerAddress} 
+                  onChange={e => setDealerAddress(e.target.value)} 
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-400 text-sm font-mono" 
+                />
+              </div>
+
+              <button 
+                type="submit" 
+                disabled={isTransferPending || isTransferConfirming} 
+                className="w-full py-3 mt-4 bg-slate-900 text-white rounded-xl hover:bg-slate-800 transition-colors font-medium text-sm disabled:opacity-50 shadow-sm"
+              >
+                {isTransferPending || isTransferConfirming ? 'Processing Transfer...' : 'Confirm B2B Transfer'}
+              </button>
+            </form>
+
+            {transferStatusMsg && <p className="text-slate-600 p-4 bg-slate-50 rounded-lg border border-slate-200 mt-4 text-sm">{transferStatusMsg}</p>}
+            
+            {isTransferConfirmed && (
+              <div className="text-blue-700 mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200 flex flex-col items-center text-sm font-medium">
+                <p className="mb-2">🤝 Transfer completed successfully!</p>
+                <a href={`https://sepolia.etherscan.io/tx/${txHashTransfer}`} target="_blank" rel="noreferrer" className="text-blue-600 underline text-xs">View on Etherscan</a>
+                <button onClick={closeModal} className="mt-4 px-4 py-2 bg-slate-900 text-white rounded text-xs">Close</button>
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        </div>
+      )}
+
     </div>
   );
 }

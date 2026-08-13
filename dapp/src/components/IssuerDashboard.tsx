@@ -1,11 +1,16 @@
 'use client';
 
-import { useState } from 'react';
-import { useWriteContract, useWaitForTransactionReceipt, usePublicClient } from 'wagmi';
+import { useState, useEffect } from 'react';
+import { useWriteContract, useWaitForTransactionReceipt, usePublicClient, useReadContract } from 'wagmi';
 import { keccak256, stringToHex } from 'viem';
 import assetRegistryJson from '../abi/AssetRegistry.json';
-import { ASSET_REGISTRY_ADDRESS } from '../contracts';
+import roleManagerJson from '../abi/RoleManager.json';
+import { ASSET_REGISTRY_ADDRESS, ROLE_MANAGER_ADDRESS } from '../contracts';
 
+/**
+ * @title IssuerDashboard
+ * @dev Dashboard for authorized manufacturers to issue digital passports (NFT minting).
+ */
 export default function IssuerDashboard({ address }: { address: string | undefined }) {
   const publicClient = usePublicClient();
   
@@ -18,10 +23,26 @@ export default function IssuerDashboard({ address }: { address: string | undefin
   const { data: txHash, writeContractAsync, isPending } = useWriteContract();
   const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({ hash: txHash });
 
+  // Read verified company name (KYB) to auto-fill the brand
+  const { data: entityName } = useReadContract({
+    address: ROLE_MANAGER_ADDRESS as `0x${string}`,
+    abi: roleManagerJson.abi,
+    functionName: 'getEntityName',
+    args: [address as `0x${string}`],
+    query: { enabled: !!address }
+  });
+
+  useEffect(() => {
+    if (entityName && typeof entityName === 'string' && entityName !== '') {
+      setBrand(entityName);
+    }
+  }, [entityName]);
+
   const handleMint = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!imageFile) return alert("Please select an image for the digital twin.");
     if (!publicClient) return alert("Blockchain client not initialized.");
+    if (!address) return alert("Wallet not connected.");
 
     try {
       setStatusMsg('1/5 🔍 Scanning blockchain for next available ID...');
@@ -83,7 +104,7 @@ export default function IssuerDashboard({ address }: { address: string | undefin
         address: ASSET_REGISTRY_ADDRESS as `0x${string}`, 
         abi: assetRegistryJson.abi, 
         functionName: 'registerAsset', 
-        args: [address, BigInt(nextTokenId), tokenURI, assetHash] 
+        args: [address, BigInt(nextTokenId), tokenURI, assetHash, brand]
       });
       
       setStatusMsg('5/5 ✍️ Please sign the transaction in MetaMask...');
@@ -94,50 +115,78 @@ export default function IssuerDashboard({ address }: { address: string | undefin
   };
 
   return (
-    <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-100 mt-6 max-w-2xl mx-auto">
-      <h2 className="text-2xl font-light text-slate-900 mb-1">Issuer Dashboard</h2>
-      <p className="text-slate-500 mb-8 font-light text-sm">Authorized manufacturing access.</p>
+    <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-100 mt-6 max-w-3xl mx-auto">
       
-      <form onSubmit={handleMint} className="space-y-5">
-        <div className="bg-slate-50 border-2 border-dashed border-slate-300 rounded-xl p-6 text-center">
+      {/* Clean Header without redundant names or wallet */}
+      <div className="mb-8 pb-6 border-b border-slate-100">
+        <h2 className="text-2xl font-light text-slate-900 mb-1">Issue Digital Passport</h2>
+        <p className="text-slate-500 font-light text-sm">Register a new physical luxury watch on the blockchain.</p>
+      </div>
+      
+      <form onSubmit={handleMint} className="space-y-6">
+        
+        <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-xl p-6 text-center hover:border-slate-300 transition-colors">
           <input 
             type="file" 
             accept="image/*" 
             required
             onChange={(e) => setImageFile(e.target.files ? e.target.files[0] : null)}
-            className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-slate-900 file:text-white hover:file:bg-slate-800 transition-colors cursor-pointer"
+            className="block w-full text-sm text-slate-500 file:mr-4 file:py-2.5 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-slate-900 file:text-white hover:file:bg-slate-800 transition-colors cursor-pointer"
           />
-          <p className="text-xs text-slate-400 mt-2">Upload the main asset image. This will be stored immutably on IPFS.</p>
+          <p className="text-xs text-slate-400 mt-3">Upload asset digital twin image. Stored immutably on IPFS.</p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Brand</label>
-            <input required placeholder="e.g. Rolex" value={brand} onChange={e => setBrand(e.target.value)} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-400 text-sm" />
+            <label className="block text-xs font-medium text-slate-500 mb-1.5">Brand</label>
+            <input 
+              required 
+              placeholder="e.g. Rolex" 
+              value={brand} 
+              onChange={e => setBrand(e.target.value)} 
+              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-400 text-sm font-medium" 
+            />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Model</label>
-            <input required placeholder="e.g. Submariner" value={model} onChange={e => setModel(e.target.value)} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-400 text-sm" />
+            <label className="block text-xs font-medium text-slate-500 mb-1.5">Model Name</label>
+            <input 
+              required 
+              placeholder="e.g. Submariner" 
+              value={model} 
+              onChange={e => setModel(e.target.value)} 
+              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-400 text-sm" 
+            />
           </div>
         </div>
         
         <div>
-          <label className="block text-xs font-medium text-slate-500 mb-1">Physical Serial (Alphanumeric)</label>
-          <input required type="text" placeholder="e.g. M1234AB" value={serial} onChange={e => setSerial(e.target.value.toUpperCase())} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-400 text-sm uppercase" />
+          <label className="block text-xs font-medium text-slate-500 mb-1.5">Physical Serial Number (Alphanumeric)</label>
+          <input 
+            required 
+            type="text" 
+            placeholder="e.g. M1234AB" 
+            value={serial} 
+            onChange={e => setSerial(e.target.value.toUpperCase())} 
+            className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-400 text-sm uppercase font-mono" 
+          />
         </div>
         
-        <button type="submit" disabled={isPending || isConfirming} className="w-full py-4 mt-2 bg-slate-900 text-white rounded-xl hover:bg-slate-800 transition-colors font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed">
+        <button 
+          type="submit" 
+          disabled={isPending || isConfirming} 
+          className="w-full py-4 bg-slate-900 text-white rounded-xl hover:bg-slate-800 transition-colors font-medium text-sm shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+        >
           {isPending || isConfirming ? 'Processing Passport...' : 'Issue Digital Passport'}
         </button>
       </form>
 
-      <div className="mt-6 text-sm font-medium">
-        {statusMsg && <p className="text-slate-600 p-4 bg-slate-50 rounded-lg border border-slate-200">{statusMsg}</p>}
+      <div className="mt-6 space-y-3">
+        {statusMsg && <p className="text-slate-600 text-sm p-4 bg-slate-50 rounded-xl border border-slate-200 font-medium">{statusMsg}</p>}
         {isConfirmed && (
-          <div className="text-emerald-700 mt-4 p-4 bg-emerald-50 rounded-lg border border-emerald-200 flex flex-col items-center">
-            <p className="mb-2">🎉 Asset successfully minted!</p>
-            <a href={`https://sepolia.etherscan.io/tx/${txHash}`} target="_blank" rel="noreferrer" className="text-emerald-600 underline text-xs">View on Etherscan</a>
-            </div>
+          <div className="text-emerald-700 p-4 bg-emerald-50 rounded-xl border border-emerald-200 flex flex-col items-center text-sm font-medium animate-fade-in">
+            <p className="mb-2">🎉 Asset successfully minted and logged on-chain!</p>
+            <a href={`https://sepolia.etherscan.io/tx/${txHash}`} target="_blank" rel="noreferrer" className="text-emerald-600 underline text-xs font-semibold">View Transaction on Etherscan</a>
+          </div>
         )}
       </div>
     </div>
