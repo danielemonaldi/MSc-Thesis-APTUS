@@ -2,7 +2,6 @@
 pragma solidity ^0.8.20;
 
 import {ERC721} from "openzeppelin-contracts/contracts/token/ERC721/ERC721.sol";
-import {IERC721} from "openzeppelin-contracts/contracts/token/ERC721/IERC721.sol";
 import {ERC721URIStorage} from "openzeppelin-contracts/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import {RoleManager} from "./RoleManager.sol";
 
@@ -34,7 +33,6 @@ contract AssetRegistry is ERC721URIStorage {
     // Custom errors for unauthorized access attempts or identity mismatches
     error CallerIsNotIssuer();
     error NotAdmin();
-    error InvalidBrandIdentity(); // New error triggered if the submitted brand doesn't match the on-chain registry
 
     /**
      * @dev Constructor initializes the ERC-721 token and links the Role Manager.
@@ -62,14 +60,13 @@ contract AssetRegistry is ERC721URIStorage {
     /**
      * @dev Registers a new physical asset by minting its corresponding NFT.
      * Only an authorized issuer (Manufacturer/Dealer) can call this function.
-     * Enforces KYB: the provided brand MUST match the official brand registered to the caller's wallet.
      * It automatically logs the "CREATED" event in the Provenance Manager.
      * 
      * @param to The address receiving the newly minted token (initial owner).
      * @param tokenId The unique identifier for the token (e.g., derived from a serial number).
      * @param tokenUri The URI pointing to the off-chain metadata (e.g., IPFS link).
      * @param assetHash The cryptographic hash of the asset record for integrity checks.
-     * @param brand The name of the brand attempting to mint, checked against on-chain identity.
+     * @param brand The name of the brand associated with the asset.
      */
     function registerAsset(
         address to,
@@ -95,7 +92,6 @@ contract AssetRegistry is ERC721URIStorage {
         // 5. Automatically record the creation event passing the entity name of the issuer
         if (address(provenanceManager) != address(0)) {
             string memory issuerName = roleManager.getEntityName(msg.sender);
-
             provenanceManager.logSystemEvent(
                 tokenId, 
                 "CREATED", 
@@ -106,30 +102,19 @@ contract AssetRegistry is ERC721URIStorage {
     }
 
     /**
-     * @dev Overrides the standard ERC-721 transferFrom to intercept token transfers.
-     * Automatically logs the "TRANSFERRED" event in the Provenance Manager.
+     * @dev Overrides OpenZeppelin's internal _update function to intercept all token transfers
+     * and log the "TRANSFERRED" event in the Provenance Manager exactly once.
      */
-    function transferFrom(address from, address to, uint256 tokenId) public virtual override(ERC721, IERC721) {
-        // Execute the standard ERC-721 transfer logic
-        super.transferFrom(from, to, tokenId);
-        
-        // Automatically record the transfer event if the Provenance Manager is linked
-        if (address(provenanceManager) != address(0)) {
-            provenanceManager.logSystemEvent(tokenId, "TRANSFERRED", "Ownership transferred securely on-chain.", msg.sender);
-        }
-    }
+    function _update(address to, uint256 tokenId, address auth) internal virtual override returns (address) {
+        address from = _ownerOf(tokenId);
+        address previousOwner = super._update(to, tokenId, auth);
 
-    /**
-     * @dev Overrides the standard ERC-721 safeTransferFrom to intercept safe token transfers.
-     * Automatically logs the "TRANSFERRED" event in the Provenance Manager.
-     */
-    function safeTransferFrom(address from, address to, uint256 tokenId, bytes memory data) public virtual override(ERC721, IERC721) {
-        // Execute the standard ERC-721 safe transfer logic
-        super.safeTransferFrom(from, to, tokenId, data);
-        
         // Automatically record the transfer event if the Provenance Manager is linked
-        if (address(provenanceManager) != address(0)) {
+        // (Excluded from minting events, which are handled in registerAsset)
+        if (from != address(0) && to != address(0) && address(provenanceManager) != address(0)) {
             provenanceManager.logSystemEvent(tokenId, "TRANSFERRED", "Ownership transferred securely on-chain.", msg.sender);
         }
+
+        return previousOwner;
     }
 }
