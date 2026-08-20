@@ -58,6 +58,12 @@ export default function CustomerDashboard({ address }: { address: string | undef
   const [assetHistory, setAssetHistory] = useState<ProvenanceEvent[]>([]);
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
 
+  // Stolen Report Confirmation State
+  const [stolenToken, setStolenToken] = useState<number | null>(null);
+  const [stolenSerial, setStolenSerial] = useState('');
+  const [stolenConfirmationSerial, setStolenConfirmationSerial] = useState('');
+  const [stolenStatus, setStolenStatus] = useState('');
+
   const { writeContractAsync } = useWriteContract();
 
   // Load Inventory for the connected customer wallet
@@ -320,27 +326,56 @@ export default function CustomerDashboard({ address }: { address: string | undef
     }
   };
 
-  const handleReportStolen = async (tokenId: number) => {
-    const confirmStolen = window.confirm(
-      "URGENT: Are you sure you want to flag this asset as STOLEN? This will be permanently recorded on the blockchain."
-    );
-    if (!confirmStolen || !publicClient) return;
+  const handleReportStolen = (tokenId: number) => {
+    const asset = inventory.find(a => a.tokenId === tokenId);
+
+    if (!asset) return;
+
+    setStolenToken(tokenId);
+    setStolenSerial(asset.serial);
+    setStolenConfirmationSerial('');
+    setStolenStatus('');
+  };
+
+  const confirmReportStolen = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (stolenToken === null || !publicClient) return;
+
+    const normalizedExpected = stolenSerial.trim().toLowerCase();
+    const normalizedEntered = stolenConfirmationSerial.trim().toLowerCase();
+
+    if (normalizedEntered !== normalizedExpected) {
+      setStolenStatus('❌ Serial number does not match.');
+      return;
+    }
 
     try {
+      setStolenStatus('⏳ Sending report to blockchain...');
+
       const hash = await writeContractAsync({
         address: PROVENANCE_MANAGER_ADDRESS as `0x${string}`,
         abi: provenanceManagerJson.abi,
         functionName: 'reportStolen',
-        args: [BigInt(tokenId)],
+        args: [BigInt(stolenToken)],
       });
-      
-      alert("Transaction submitted. Waiting for confirmation...");
+
+      setStolenStatus('⏳ Transaction sent. Awaiting confirmation...');
+
       await publicClient.waitForTransactionReceipt({ hash });
-      alert("✅ Asset successfully flagged as STOLEN.");
-      
+
+      setStolenStatus('✅ Asset reported as STOLEN and registered on the blockchain.');
+
+      setTimeout(() => {
+        closeStolenModal();
+      }, 2500);
+
     } catch (error: any) {
       console.error(error);
-      alert(`❌ Error reporting status: ${error.message || 'Transaction failed'}`);
+
+      setStolenStatus(
+        `❌ Error: ${error.message || 'Transaction failed.'}`
+      );
     }
   };
 
@@ -348,6 +383,13 @@ export default function CustomerDashboard({ address }: { address: string | undef
     setSelectedToken(null);
     setRecipientAddress('');
     setInitiateStatus('');
+  };
+
+  const closeStolenModal = () => {
+    setStolenToken(null);
+    setStolenSerial('');
+    setStolenConfirmationSerial('');
+    setStolenStatus('');
   };
 
   return (
@@ -623,6 +665,145 @@ export default function CustomerDashboard({ address }: { address: string | undef
                 {initiateStatus}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* REPORT STOLEN CONFIRMATION MODAL */}
+      {stolenToken !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 animate-fade-in">
+
+            {/* Header */}
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h3 className="text-xl font-medium text-slate-900">
+                  Report Asset as Stolen
+                </h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  Security confirmation required
+                </p>
+              </div>
+
+              <button
+                onClick={closeStolenModal}
+                className="text-slate-400 hover:text-slate-600 text-xl font-bold"
+                disabled={stolenStatus.startsWith('⏳')}
+              >
+                &times;
+              </button>
+            </div>
+
+            {/* Warning */}
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6">
+              <div className="flex items-start gap-3">
+                <span className="text-xl">⚠️</span>
+
+                <div>
+                  <p className="text-sm font-semibold text-red-800">
+                    This action is permanent
+                  </p>
+
+                  <p className="text-xs text-red-600 mt-1 leading-relaxed">
+                    Reporting this watch as stolen will create an immutable
+                    provenance record on the blockchain.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Asset information */}
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 mb-6">
+              <div className="flex justify-between items-center mb-3">
+                <span className="text-xs text-slate-400 uppercase tracking-wider">
+                  Token ID
+                </span>
+
+                <span className="text-sm font-bold text-slate-800">
+                  #{stolenToken}
+                </span>
+              </div>
+
+              <div>
+                <span className="text-xs text-slate-400 uppercase tracking-wider block mb-1">
+                  Physical Serial
+                </span>
+
+                <span className="font-mono font-bold text-slate-900 bg-white border border-slate-200 px-3 py-1.5 rounded-lg inline-block">
+                  {stolenSerial}
+                </span>
+              </div>
+            </div>
+
+            {/* Serial confirmation */}
+            <form onSubmit={confirmReportStolen} className="space-y-4">
+
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-2">
+                  Enter the physical serial number to confirm
+                </label>
+
+                <input
+                  required
+                  type="text"
+                  autoFocus
+                  placeholder="Enter serial number exactly..."
+                  value={stolenConfirmationSerial}
+                  onChange={e => {
+                    setStolenConfirmationSerial(e.target.value);
+                    setStolenStatus('');
+                  }}
+                  disabled={stolenStatus.startsWith('⏳')}
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-400 text-sm font-mono uppercase"
+                />
+
+                <p className="text-[11px] text-slate-400 mt-2">
+                  For security, enter the serial number exactly as shown above.
+                </p>
+              </div>
+
+              {/* Confirmation status */}
+              {stolenStatus && (
+                <div
+                  className={`p-3 rounded-lg text-xs font-medium text-center ${
+                    stolenStatus.includes('❌')
+                      ? 'bg-red-50 text-red-600 border border-red-200'
+                      : stolenStatus.includes('✅')
+                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                      : 'bg-slate-50 text-slate-600 border border-slate-200'
+                  }`}
+                >
+                  {stolenStatus}
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="grid grid-cols-2 gap-3 pt-2">
+
+                <button
+                  type="button"
+                  onClick={closeStolenModal}
+                  disabled={stolenStatus.startsWith('⏳')}
+                  className="py-3 bg-white text-slate-700 border border-slate-300 rounded-xl hover:bg-slate-50 transition-colors font-medium text-sm disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={
+                    !stolenConfirmationSerial.trim() ||
+                    stolenConfirmationSerial.trim().toLowerCase() !==
+                      stolenSerial.trim().toLowerCase() ||
+                    stolenStatus.startsWith('⏳')
+                  }
+                  className="py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors font-medium text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Confirm Stolen
+                </button>
+
+              </div>
+            </form>
           </div>
         </div>
       )}
