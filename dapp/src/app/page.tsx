@@ -8,6 +8,7 @@ import roleManagerJson from '../abi/RoleManager.json';
 import { ROLE_MANAGER_ADDRESS } from '../contracts';
 
 import WelcomeScreen from '../components/WelcomeScreen';
+import PublicExplorer from '../components/PublicExplorer';
 import AdminDashboard from '../components/AdminDashboard';
 import IssuerDashboard from '../components/IssuerDashboard';
 import IssuerDistributionDashboard from '../components/IssuerDistributionDashboard';
@@ -49,7 +50,10 @@ export default function Home() {
   
   const hasNoSpecialRole = !isAdmin && !isIssuer && !isService && !isDealer;
 
-  const availableTabs = [];
+  const availableTabs: string[] = [];
+
+  // Build the list of available tabs dynamically
+  if (hasNoSpecialRole) availableTabs.push('vault');
   if (isAdmin) availableTabs.push('admin');
   if (isIssuer) {
     availableTabs.push('issuer');
@@ -57,6 +61,8 @@ export default function Home() {
   }
   if (isDealer) availableTabs.push('dealer');
   if (isService) availableTabs.push('service');
+
+  availableTabs.push('explorer');
 
   const currentTab = availableTabs.includes(activeTab) ? activeTab : availableTabs[0];
 
@@ -100,57 +106,72 @@ export default function Home() {
           </div>
         )}
 
-        {isConnected && !isLoading && hasNoSpecialRole && (
-          <CustomerDashboard address={address} />
-        )}
-
         {isConnected && !isLoading && availableTabs.length > 0 && (
           <div className="animate-fade-in">
             {availableTabs.length > 1 && (
               <div className="flex gap-4 mb-8 pb-4 border-b border-slate-200 overflow-x-auto">
+
+                {hasNoSpecialRole && (
+                  <button 
+                    onClick={() => setActiveTab('vault')} 
+                    className={`px-5 py-2.5 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${currentTab === 'vault' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-100'}`}
+                  >
+                    📦 My Vault
+                  </button>
+                )}
+
                 {isAdmin && (
                   <button 
                     onClick={() => setActiveTab('admin')} 
-                    className={`px-5 py-2.5 rounded-lg text-sm font-medium transition-all ${currentTab === 'admin' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-100'}`}
+                    className={`px-5 py-2.5 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${currentTab === 'admin' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-100'}`}
                   >
-                    Admin Control
+                    ⚙️ Admin Control
                   </button>
                 )}
                 {isIssuer && (
                   <>
                     <button 
                       onClick={() => setActiveTab('issuer')} 
-                      className={`px-5 py-2.5 rounded-lg text-sm font-medium transition-all ${currentTab === 'issuer' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-100'}`}
+                      className={`px-5 py-2.5 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${currentTab === 'issuer' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-100'}`}
                     >
-                      Issuer Panel
+                      ➕ Issuer Panel
                     </button>
                     <button 
                       onClick={() => setActiveTab('distribution')} 
-                      className={`px-5 py-2.5 rounded-lg text-sm font-medium transition-all ${currentTab === 'distribution' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-100'}`}
+                      className={`px-5 py-2.5 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${currentTab === 'distribution' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-100'}`}
                     >
-                      B2B Distribution
+                      🏦 B2B Distribution
                     </button>
                   </>
                 )}
                 {isDealer && (
                   <button 
                     onClick={() => setActiveTab('dealer')} 
-                    className={`px-5 py-2.5 rounded-lg text-sm font-medium transition-all ${currentTab === 'dealer' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-100'}`}
+                    className={`px-5 py-2.5 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${currentTab === 'dealer' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-100'}`}
                   >
-                    Dealer Panel
+                    💲Dealer Panel
                   </button>
                 )}
                 {isService && (
                   <button 
                     onClick={() => setActiveTab('service')} 
-                    className={`px-5 py-2.5 rounded-lg text-sm font-medium transition-all ${currentTab === 'service' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-100'}`}
+                    className={`px-5 py-2.5 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${currentTab === 'service' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-100'}`}
                   >
-                    Service Panel
+                    🛠️ Service Panel
                   </button>
                 )}
+
+                <button
+                  onClick={() => setActiveTab('explorer')} 
+                  className={`px-5 py-2.5 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${currentTab === 'explorer' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-100'}`}
+                >
+                  🔍 Public Explorer
+                </button>
               </div>
             )}
 
+            {currentTab === 'explorer' && <PublicExplorer />}
+            {currentTab === 'vault' && <CustomerDashboard address={address} />}
             {currentTab === 'admin' && <AdminDashboard />}
             {currentTab === 'issuer' && <IssuerDashboard address={address} />}
             {currentTab === 'distribution' && <IssuerDistributionDashboard address={address} />}
