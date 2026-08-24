@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useWriteContract, usePublicClient } from 'wagmi';
+import { useWriteContract, usePublicClient, useWatchContractEvent } from 'wagmi';
 import { isAddress } from 'viem';
 
 import assetRegistryJson from '../abi/AssetRegistry.json';
@@ -22,6 +22,7 @@ interface WatchAsset {
   name: string;
   image: string;
   metadata: any;
+  pendingRecipient?: string;
 }
 
 interface ProvenanceEvent {
@@ -35,22 +36,23 @@ interface ProvenanceEvent {
 
 /**
  * @title CustomerDashboard
- * @dev Private collector vault featuring serial search, unified view (no tabs), and direct transfer actions.
+ * @dev Private collector vault featuring universal search, dynamic P2P handshakes, and live event listening.
  */
 export default function CustomerDashboard({ address }: { address: string | undefined }) {
   const publicClient = usePublicClient();
   
   // Vault State & Search
   const [inventory, setInventory] = useState<WatchAsset[]>([]);
+  const [incomingTransfers, setIncomingTransfers] = useState<WatchAsset[]>([]);
+  const [outgoingTransfers, setOutgoingTransfers] = useState<WatchAsset[]>([]);
+  
   const [isLoading, setIsLoading] = useState(false);
-  const [searchSerial, setSearchSerial] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
 
-  // Transfer State (P2P Handshakes)
+  // Transfer Modal State
   const [selectedToken, setSelectedToken] = useState<number | null>(null);
   const [recipientAddress, setRecipientAddress] = useState('');
   const [initiateStatus, setInitiateStatus] = useState('');
-  const [acceptTokenId, setAcceptTokenId] = useState('');
-  const [cancelTokenId, setCancelTokenId] = useState('');
   const [transferCenterStatus, setTransferCenterStatus] = useState('');
 
   // Provenance Timeline State
@@ -66,69 +68,117 @@ export default function CustomerDashboard({ address }: { address: string | undef
 
   const { writeContractAsync } = useWriteContract();
 
-  // Load Inventory for the connected customer wallet
+  // Intelligent parallel scanning for inventory, incoming, and outgoing transfers
   const loadInventory = async () => {
     if (!publicClient || !address) return;
     
-    setIsLoading(true);
-    const foundAssets: WatchAsset[] = [];
-
-    for (let i = 1; i <= 50; i++) {
-      try {
-        const owner = await publicClient.readContract({
-          address: ASSET_REGISTRY_ADDRESS as `0x${string}`,
-          abi: assetRegistryJson.abi,
-          functionName: 'ownerOf',
-          args: [BigInt(i)]
-        });
-
-        if ((owner as string).toLowerCase() === address.toLowerCase()) {
-          const uri = await publicClient.readContract({
-            address: ASSET_REGISTRY_ADDRESS as `0x${string}`,
-            abi: assetRegistryJson.abi,
-            functionName: 'tokenURI',
-            args: [BigInt(i)]
-          });
-
-          const gatewayUrl = (uri as string).replace('ipfs://', 'https://gateway.pinata.cloud/ipfs/');
-          const ipfsRes = await fetch(gatewayUrl);
-          const metadata = await ipfsRes.json();
-
-          // Extract physical serial number from attributes or fallback
-          const physicalSerial = metadata.attributes?.find((attr: any) => attr.trait_type === 'Physical Serial')?.value || `SN-${i}`;
-
-          // Clean up the display name to remove trailing serial strings if present in metadata name
-          let cleanName = metadata.name || 'Watch Asset';
-          if (cleanName.includes(' - SN:')) {
-            cleanName = cleanName.split(' - SN:')[0];
-          }
-
-          // Robustly format IPFS gateway URL for image rendering
-          let imageGateway = '';
-          if (metadata.image) {
-            if (metadata.image.startsWith('ipfs://')) {
-              imageGateway = metadata.image.replace('ipfs://', 'https://gateway.pinata.cloud/ipfs/');
-            } else if (metadata.image.startsWith('http')) {
-              imageGateway = metadata.image;
-            } else {
-              imageGateway = `https://gateway.pinata.cloud/ipfs/${metadata.image}`;
-            }
-          }
-
-          foundAssets.push({ 
-            tokenId: i, 
-            serial: physicalSerial,
-            name: cleanName,
-            image: imageGateway,
-            metadata 
-          });
-        }
-      } catch (error) {
-        break;
-      }
+    // Mostriamo il caricamento solo se l'inventario è vuoto (evita sfarfallii durante i refresh live)
+    if (inventory.length === 0 && incomingTransfers.length === 0 && outgoingTransfers.length === 0) {
+      setIsLoading(true);
     }
     
+    const tokenIds = Array.from({ length: 50 }, (_, i) => i + 1);
+
+    const results = await Promise.all(
+      tokenIds.map(async (tokenId) => {
+        try {
+          // Check Token Ownership
+          let owner = '';
+          try {
+            owner = await publicClient.readContract({
+              address: ASSET_REGISTRY_ADDRESS as `0x${string}`,
+              abi: assetRegistryJson.abi,
+              functionName: 'ownerOf',
+              args: [BigInt(tokenId)]
+            }) as string;
+          } catch(e) {
+            return null; // Token does not exist yet
+          }
+
+          // Check for any Pending Transfers mapping
+          let pendingRecipient = '0x0000000000000000000000000000000000000000';
+          try {
+            pendingRecipient = await publicClient.readContract({
+              address: OWNERSHIP_TRANSFER_ADDRESS as `0x${string}`,
+              abi: ownershipTransferJson.abi,
+              functionName: 'pendingTransfers',
+              args: [BigInt(tokenId)]
+            }) as string;
+          } catch(e) {
+            // Mapping empty or not present
+          }
+
+          const isOwner = owner.toLowerCase() === address.toLowerCase();
+          const isRecipient = pendingRecipient.toLowerCase() === address.toLowerCase();
+
+          if (isOwner || isRecipient) {
+            const uri = await publicClient.readContract({
+              address: ASSET_REGISTRY_ADDRESS as `0x${string}`,
+              abi: assetRegistryJson.abi,
+              functionName: 'tokenURI',
+              args: [BigInt(tokenId)]
+            }) as string;
+
+            const gatewayUrl = uri.replace('ipfs://', 'https://gateway.pinata.cloud/ipfs/');
+            const ipfsRes = await fetch(gatewayUrl);
+            const metadata = await ipfsRes.json();
+
+            const physicalSerial = metadata.attributes?.find((attr: any) => attr.trait_type === 'Physical Serial')?.value || `SN-${tokenId}`;
+
+            let cleanName = metadata.name || 'Watch Asset';
+            if (cleanName.includes(' - SN:')) {
+              cleanName = cleanName.split(' - SN:')[0];
+            }
+
+            let imageGateway = '';
+            if (metadata.image) {
+              if (metadata.image.startsWith('ipfs://')) {
+                imageGateway = metadata.image.replace('ipfs://', 'https://gateway.pinata.cloud/ipfs/');
+              } else if (metadata.image.startsWith('http')) {
+                imageGateway = metadata.image;
+              } else {
+                imageGateway = `https://gateway.pinata.cloud/ipfs/${metadata.image}`;
+              }
+            }
+
+            return { 
+              tokenId, 
+              serial: physicalSerial,
+              name: cleanName,
+              image: imageGateway,
+              metadata,
+              isOwner,
+              isRecipient,
+              pendingRecipient: pendingRecipient !== '0x0000000000000000000000000000000000000000' ? pendingRecipient : undefined
+            };
+          }
+        } catch (error) {
+          return null;
+        }
+        return null;
+      })
+    );
+    
+    const foundAssets: WatchAsset[] = [];
+    const foundIncoming: WatchAsset[] = [];
+    const foundOutgoing: WatchAsset[] = [];
+
+    // Dynamically sort assets based on their transfer status
+    results.forEach(res => {
+      if (res) {
+        if (res.isRecipient) {
+          foundIncoming.push(res);
+        } else if (res.isOwner && res.pendingRecipient) {
+          foundOutgoing.push(res);
+        } else if (res.isOwner) {
+          foundAssets.push(res);
+        }
+      }
+    });
+
     setInventory(foundAssets);
+    setIncomingTransfers(foundIncoming);
+    setOutgoingTransfers(foundOutgoing);
     setIsLoading(false);
   };
 
@@ -136,12 +186,34 @@ export default function CustomerDashboard({ address }: { address: string | undef
     loadInventory();
   }, [address, publicClient]); 
 
-  // Filter inventory based on the serial number search input
+  // --- LIVE EVENT LISTENERS ---
+  // Ricarica automaticamente l'inventario quando avvengono trasferimenti o handshake
+  useWatchContractEvent({
+    address: OWNERSHIP_TRANSFER_ADDRESS as `0x${string}`,
+    abi: ownershipTransferJson.abi,
+    onLogs() {
+      console.log("Live Update: OwnershipTransfer event detected!");
+      loadInventory();
+    },
+  });
+
+  useWatchContractEvent({
+    address: ASSET_REGISTRY_ADDRESS as `0x${string}`,
+    abi: assetRegistryJson.abi,
+    eventName: 'Transfer',
+    onLogs() {
+      console.log("Live Update: AssetRegistry direct transfer detected!");
+      loadInventory();
+    },
+  });
+  // ----------------------------
+
+  // General search: filters by name or serial
   const filteredInventory = inventory.filter(asset => 
-    asset.serial.toLowerCase().includes(searchSerial.trim().toLowerCase())
+    asset.name.toLowerCase().includes(searchQuery.trim().toLowerCase()) ||
+    asset.serial.toLowerCase().includes(searchQuery.trim().toLowerCase())
   );
 
-  // Fetch Provenance History with entity name resolution and B2B distinction
   const handleViewProvenance = async (tokenId: number) => {
     if (!publicClient) return;
     setHistoryTokenId(tokenId);
@@ -221,14 +293,10 @@ export default function CustomerDashboard({ address }: { address: string | undef
 
   const getEventBadgeStyle = (eventType: string, subType?: string) => {
     if (!eventType) return 'bg-slate-100 text-slate-800 border-slate-200';
-    
     if (eventType.toUpperCase() === 'TRANSFERRED') {
-      if (subType?.includes('B2B')) {
-        return 'bg-amber-100 text-amber-800 border-amber-200';
-      }
+      if (subType?.includes('B2B')) return 'bg-amber-100 text-amber-800 border-amber-200';
       return 'bg-emerald-100 text-emerald-800 border-emerald-200';
     }
-
     switch(eventType.toUpperCase()) {
       case 'CREATED': return 'bg-blue-100 text-blue-800 border-blue-200';
       case 'MAINTENANCE': return 'bg-purple-100 text-purple-800 border-purple-200';
@@ -272,7 +340,7 @@ export default function CustomerDashboard({ address }: { address: string | undef
       setInitiateStatus('✅ Handshake initiated! The recipient must now accept it.');
       setTimeout(() => {
         closeTransferModal();
-        loadInventory();
+        // Nota: non serve chiamare loadInventory() qui perché lo farà in automatico il listener live!
       }, 3000);
 
     } catch (error: any) {
@@ -281,45 +349,42 @@ export default function CustomerDashboard({ address }: { address: string | undef
     }
   };
 
-  const handleAcceptTransfer = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!acceptTokenId || !publicClient) return;
-
+  const handleAcceptTransfer = async (tokenId: number) => {
+    if (!publicClient) return;
     try {
-      setTransferCenterStatus('⏳ Accepting digital passport...');
+      setTransferCenterStatus(`⏳ Accepting digital passport for #${tokenId}...`);
       const hash = await writeContractAsync({
         address: OWNERSHIP_TRANSFER_ADDRESS as `0x${string}`,
         abi: ownershipTransferJson.abi,
         functionName: 'acceptTransfer',
-        args: [BigInt(acceptTokenId)],
+        args: [BigInt(tokenId)],
       });
       await publicClient.waitForTransactionReceipt({ hash });
 
       setTransferCenterStatus('✅ Transfer accepted! Asset secured in your vault.');
-      setAcceptTokenId('');
-      loadInventory();
+      setTimeout(() => setTransferCenterStatus(''), 4000);
+      // Aggiornamento live automatico
     } catch (error: any) {
       console.error(error);
       setTransferCenterStatus(`❌ Error: ${error.message || 'Failed to accept'}`);
     }
   };
 
-  const handleCancelTransfer = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!cancelTokenId || !publicClient) return;
-
+  const handleCancelTransfer = async (tokenId: number) => {
+    if (!publicClient) return;
     try {
-      setTransferCenterStatus('⏳ Canceling pending transfer...');
+      setTransferCenterStatus(`⏳ Canceling pending transfer for #${tokenId}...`);
       const hash = await writeContractAsync({
         address: OWNERSHIP_TRANSFER_ADDRESS as `0x${string}`,
         abi: ownershipTransferJson.abi,
         functionName: 'cancelTransfer',
-        args: [BigInt(cancelTokenId)],
+        args: [BigInt(tokenId)],
       });
       await publicClient.waitForTransactionReceipt({ hash });
 
       setTransferCenterStatus('✅ Transfer canceled. The asset remains in your vault.');
-      setCancelTokenId('');
+      setTimeout(() => setTransferCenterStatus(''), 4000);
+      // Aggiornamento live automatico
     } catch (error: any) {
       console.error(error);
       setTransferCenterStatus(`❌ Error: ${error.message || 'Failed to cancel'}`);
@@ -328,9 +393,7 @@ export default function CustomerDashboard({ address }: { address: string | undef
 
   const handleReportStolen = (tokenId: number) => {
     const asset = inventory.find(a => a.tokenId === tokenId);
-
     if (!asset) return;
-
     setStolenToken(tokenId);
     setStolenSerial(asset.serial);
     setStolenConfirmationSerial('');
@@ -339,7 +402,6 @@ export default function CustomerDashboard({ address }: { address: string | undef
 
   const confirmReportStolen = async (e: React.FormEvent) => {
     e.preventDefault();
-
     if (stolenToken === null || !publicClient) return;
 
     const normalizedExpected = stolenSerial.trim().toLowerCase();
@@ -352,30 +414,21 @@ export default function CustomerDashboard({ address }: { address: string | undef
 
     try {
       setStolenStatus('⏳ Sending report to blockchain...');
-
       const hash = await writeContractAsync({
         address: PROVENANCE_MANAGER_ADDRESS as `0x${string}`,
         abi: provenanceManagerJson.abi,
         functionName: 'reportStolen',
         args: [BigInt(stolenToken)],
       });
-
       setStolenStatus('⏳ Transaction sent. Awaiting confirmation...');
-
       await publicClient.waitForTransactionReceipt({ hash });
-
       setStolenStatus('✅ Asset reported as STOLEN and registered on the blockchain.');
-
       setTimeout(() => {
         closeStolenModal();
       }, 2500);
-
     } catch (error: any) {
       console.error(error);
-
-      setStolenStatus(
-        `❌ Error: ${error.message || 'Transaction failed.'}`
-      );
+      setStolenStatus(`❌ Error: ${error.message || 'Transaction failed.'}`);
     }
   };
 
@@ -395,29 +448,29 @@ export default function CustomerDashboard({ address }: { address: string | undef
   return (
     <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-100 mt-6 max-w-5xl mx-auto relative">
       
-      {/* Header with Serial Search Bar */}
+      {/* Header with Universal Search Bar */}
       <div className="mb-8 pb-6 border-b border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center">
         <div>
           <h2 className="text-2xl font-light text-slate-900 mb-1">Private Collector Vault</h2>
           <p className="text-slate-500 font-light text-sm">Manage your authentic digital watch passports.</p>
         </div>
 
-        {/* Serial Number Search Bar */}
         <div className="w-full md:w-72 mt-4 md:mt-0">
           <input 
             type="text"
-            placeholder="🔍 Search by serial number..."
-            value={searchSerial}
-            onChange={e => setSearchSerial(e.target.value)}
-            className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-400 text-sm uppercase font-mono"
+            placeholder="🔍 Search model or serial..."
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-400 text-sm font-mono"
           />
         </div>
       </div>
 
+      {/* VAULT GRID */}
       {isLoading && (
         <div className="flex flex-col items-center justify-center py-16">
           <div className="w-8 h-8 border-4 border-slate-200 border-t-slate-800 rounded-full animate-spin mb-4"></div>
-          <p className="text-slate-500 text-sm font-light">Scanning blockchain vault...</p>
+          <p className="text-slate-500 text-sm font-light">Scanning blockchain vault & transfers...</p>
         </div>
       )}
 
@@ -425,17 +478,15 @@ export default function CustomerDashboard({ address }: { address: string | undef
         <div className="text-center py-16 bg-slate-50 rounded-xl border border-dashed border-slate-300 mb-10">
           <span className="text-4xl mb-4 block">📦</span>
           <h3 className="text-lg font-medium text-slate-800 mb-2">Your vault is empty</h3>
-          <p className="text-sm text-slate-500">You do not own any registered digital passports yet.</p>
+          <p className="text-sm text-slate-500">You do not own any registered digital passports right now.</p>
         </div>
       )}
 
-      {/* Vault Grid Inventory */}
       {!isLoading && inventory.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12 animate-fade-in">
           {filteredInventory.map((asset) => (
             <div key={asset.tokenId} className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow flex flex-col">
               
-              {/* Image Container */}
               <div className="bg-slate-50 h-52 w-full flex items-center justify-center border-b border-slate-100 overflow-hidden relative p-4">
                 {asset.image ? (
                   <img src={asset.image} alt={asset.name} className="max-h-full max-w-full object-contain drop-shadow-sm" />
@@ -447,7 +498,6 @@ export default function CustomerDashboard({ address }: { address: string | undef
                 </span>
               </div>
               
-              {/* Card Content */}
               <div className="p-5 flex-1 flex flex-col">
                 <h3 className="text-lg font-medium text-slate-900 mb-1">{asset.name}</h3>
                 
@@ -495,65 +545,121 @@ export default function CustomerDashboard({ address }: { address: string | undef
         </div>
       )}
 
-      {/* INCOMING & PENDING TRANSFERS SECTION (Integrated directly at the bottom) */}
-      <div className="pt-8 border-t border-slate-100">
-        <h3 className="text-xl font-medium text-slate-900 mb-1">Transfer Center & Handshakes</h3>
-        <p className="text-slate-500 font-light text-sm mb-6">Accept incoming digital passports or cancel pending outgoing transfers.</p>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          {/* Accept Transfer Box */}
-          <div className="bg-slate-50 p-6 rounded-xl border border-slate-200">
-            <h4 className="text-md font-medium text-slate-800 mb-1">Accept Incoming Transfer</h4>
-            <p className="text-xs text-slate-500 mb-4">Accept a pending digital passport handshake sent to your wallet.</p>
-            
-            <form onSubmit={handleAcceptTransfer} className="space-y-4">
-              <div>
-                <input 
-                  required 
-                  type="number"
-                  min="1"
-                  placeholder="Token ID (e.g. 1)" 
-                  value={acceptTokenId} 
-                  onChange={e => setAcceptTokenId(e.target.value)} 
-                  className="w-full px-4 py-3 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-400 text-sm" 
-                />
-              </div>
-              <button type="submit" className="w-full py-3 bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors font-medium text-sm shadow-sm">
-                Accept Digital Passport
-              </button>
-            </form>
-          </div>
-
-          {/* Cancel Transfer Box */}
-          <div className="bg-white p-6 rounded-xl border border-slate-200">
-            <h4 className="text-md font-medium text-slate-800 mb-1">Cancel Outgoing Handshake</h4>
-            <p className="text-xs text-slate-500 mb-4">Cancel a transfer you initiated if the buyer hasn't accepted yet.</p>
-            
-            <form onSubmit={handleCancelTransfer} className="space-y-4">
-              <div>
-                <input 
-                  required 
-                  type="number"
-                  min="1"
-                  placeholder="Token ID (e.g. 1)" 
-                  value={cancelTokenId} 
-                  onChange={e => setCancelTokenId(e.target.value)} 
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-400 text-sm" 
-                />
-              </div>
-              <button type="submit" className="w-full py-3 bg-slate-100 text-slate-700 border border-slate-300 rounded-lg hover:bg-slate-200 transition-colors font-medium text-sm shadow-sm">
-                Cancel Transfer
-              </button>
-            </form>
+      {/* DYNAMIC TRANSFER CENTER & HANDSHAKES (ALWAYS VISIBLE) */}
+      {!isLoading && (
+        <div className="pt-8 border-t border-slate-100 mt-12 animate-fade-in">
+          <div className="mb-6">
+            <h3 className="text-xl font-medium text-slate-900 mb-1">Transfer Center & Handshakes</h3>
+            <p className="text-slate-500 font-light text-sm">Review and manage pending P2P transfers.</p>
           </div>
 
           {transferCenterStatus && (
-            <div className={`md:col-span-2 p-4 rounded-lg text-sm font-medium text-center ${transferCenterStatus.includes('❌') ? 'bg-red-50 text-red-600 border border-red-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`}>
+            <div className={`mb-6 p-4 rounded-lg text-sm font-medium text-center ${transferCenterStatus.includes('❌') ? 'bg-red-50 text-red-600 border border-red-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`}>
               {transferCenterStatus}
             </div>
           )}
+
+          {/* EMPTY STATE */}
+          {incomingTransfers.length === 0 && outgoingTransfers.length === 0 ? (
+            <div className="bg-slate-50 border border-dashed border-slate-200 rounded-xl p-8 text-center">
+              <span className="text-3xl mb-3 block">🤝</span>
+              <p className="text-slate-600 font-medium text-sm">No pending handshakes</p>
+              <p className="text-slate-400 text-xs mt-1">Any incoming or unaccepted outgoing P2P transfers will appear here.</p>
+            </div>
+          ) : (
+            <div className="space-y-8">
+              
+              {/* INCOMING TRANSFERS */}
+              {incomingTransfers.length > 0 && (
+                <div>
+                  <h4 className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-4 flex items-center gap-2">
+                    <span>⬇️</span> Incoming Digital Passports
+                  </h4>
+                  <div className="space-y-4">
+                    {incomingTransfers.map(asset => (
+                      <div key={asset.tokenId} className="flex flex-col sm:flex-row bg-white border border-blue-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow">
+                        <div className="w-full sm:w-48 h-48 sm:h-auto bg-blue-50/50 flex items-center justify-center p-4 border-b sm:border-b-0 sm:border-r border-blue-100 relative">
+                          {asset.image ? (
+                            <img src={asset.image} alt={asset.name} className="max-h-full max-w-full object-contain drop-shadow-sm" />
+                          ) : (
+                            <span className="text-5xl">⌚</span>
+                          )}
+                        </div>
+                        <div className="p-5 flex-1 flex flex-col justify-between">
+                          <div>
+                            <div className="flex justify-between items-start mb-1">
+                              <h4 className="text-lg font-medium text-slate-900">{asset.name}</h4>
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600 bg-blue-50 px-2 py-1 rounded border border-blue-200">
+                                Action Required
+                              </span>
+                            </div>
+                            <p className="text-xs font-mono text-slate-500 mb-4">Serial: {asset.serial} (ID: #{asset.tokenId})</p>
+                            <p className="text-sm text-slate-600 mb-4">
+                              A verified digital passport has been sent to your wallet. Accept the handshake to secure it in your vault.
+                            </p>
+                          </div>
+                          <button 
+                            onClick={() => handleAcceptTransfer(asset.tokenId)}
+                            className="w-full sm:w-auto px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm shadow-sm"
+                          >
+                            Accept Digital Passport
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* OUTGOING TRANSFERS */}
+              {outgoingTransfers.length > 0 && (
+                <div>
+                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+                    <span>⬆️</span> Pending Outgoing Handshakes
+                  </h4>
+                  <div className="space-y-4">
+                    {outgoingTransfers.map(asset => (
+                      <div key={asset.tokenId} className="flex flex-col sm:flex-row bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                        <div className="w-full sm:w-48 h-48 sm:h-auto bg-slate-50 flex items-center justify-center p-4 border-b sm:border-b-0 sm:border-r border-slate-100 relative opacity-70 grayscale">
+                          {asset.image ? (
+                            <img src={asset.image} alt={asset.name} className="max-h-full max-w-full object-contain drop-shadow-sm" />
+                          ) : (
+                            <span className="text-5xl">⌚</span>
+                          )}
+                        </div>
+                        <div className="p-5 flex-1 flex flex-col justify-between">
+                          <div>
+                            <div className="flex justify-between items-start mb-1">
+                              <h4 className="text-lg font-medium text-slate-900">{asset.name}</h4>
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600 bg-amber-50 px-2 py-1 rounded border border-amber-200">
+                                Pending Accept
+                              </span>
+                            </div>
+                            <p className="text-xs font-mono text-slate-500 mb-4">Serial: {asset.serial} (ID: #{asset.tokenId})</p>
+                            <p className="text-sm text-slate-600 mb-2">
+                              Handshake initiated. Waiting for the recipient to accept the transfer.
+                            </p>
+                            <p className="text-xs font-mono bg-slate-50 p-2 rounded border border-slate-200 text-slate-500 break-all mb-4 w-fit">
+                              To: {asset.pendingRecipient}
+                            </p>
+                          </div>
+                          <button 
+                            onClick={() => handleCancelTransfer(asset.tokenId)}
+                            className="w-full sm:w-auto px-6 py-2.5 bg-white text-slate-700 border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors font-medium text-sm shadow-sm"
+                          >
+                            Cancel Handshake
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+            </div>
+          )}
         </div>
-      </div>
+      )}
 
       {/* PROVENANCE TIMELINE MODAL */}
       {historyTokenId !== null && (
@@ -674,7 +780,6 @@ export default function CustomerDashboard({ address }: { address: string | undef
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 animate-fade-in">
 
-            {/* Header */}
             <div className="flex justify-between items-center mb-6">
               <div>
                 <h3 className="text-xl font-medium text-slate-900">
@@ -684,7 +789,6 @@ export default function CustomerDashboard({ address }: { address: string | undef
                   Security confirmation required
                 </p>
               </div>
-
               <button
                 onClick={closeStolenModal}
                 className="text-slate-400 hover:text-slate-600 text-xl font-bold"
@@ -694,16 +798,13 @@ export default function CustomerDashboard({ address }: { address: string | undef
               </button>
             </div>
 
-            {/* Warning */}
             <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6">
               <div className="flex items-start gap-3">
                 <span className="text-xl">⚠️</span>
-
                 <div>
                   <p className="text-sm font-semibold text-red-800">
                     This action is permanent
                   </p>
-
                   <p className="text-xs text-red-600 mt-1 leading-relaxed">
                     Reporting this watch as stolen will create an immutable
                     provenance record on the blockchain.
@@ -712,37 +813,30 @@ export default function CustomerDashboard({ address }: { address: string | undef
               </div>
             </div>
 
-            {/* Asset information */}
             <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 mb-6">
               <div className="flex justify-between items-center mb-3">
                 <span className="text-xs text-slate-400 uppercase tracking-wider">
                   Token ID
                 </span>
-
                 <span className="text-sm font-bold text-slate-800">
                   #{stolenToken}
                 </span>
               </div>
-
               <div>
                 <span className="text-xs text-slate-400 uppercase tracking-wider block mb-1">
                   Physical Serial
                 </span>
-
                 <span className="font-mono font-bold text-slate-900 bg-white border border-slate-200 px-3 py-1.5 rounded-lg inline-block">
                   {stolenSerial}
                 </span>
               </div>
             </div>
 
-            {/* Serial confirmation */}
             <form onSubmit={confirmReportStolen} className="space-y-4">
-
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-2">
                   Enter the physical serial number to confirm
                 </label>
-
                 <input
                   required
                   type="text"
@@ -756,13 +850,11 @@ export default function CustomerDashboard({ address }: { address: string | undef
                   disabled={stolenStatus.startsWith('⏳')}
                   className="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-400 text-sm font-mono uppercase"
                 />
-
                 <p className="text-[11px] text-slate-400 mt-2">
                   For security, enter the serial number exactly as shown above.
                 </p>
               </div>
 
-              {/* Confirmation status */}
               {stolenStatus && (
                 <div
                   className={`p-3 rounded-lg text-xs font-medium text-center ${
@@ -777,9 +869,7 @@ export default function CustomerDashboard({ address }: { address: string | undef
                 </div>
               )}
 
-              {/* Actions */}
               <div className="grid grid-cols-2 gap-3 pt-2">
-
                 <button
                   type="button"
                   onClick={closeStolenModal}
@@ -788,7 +878,6 @@ export default function CustomerDashboard({ address }: { address: string | undef
                 >
                   Cancel
                 </button>
-
                 <button
                   type="submit"
                   disabled={
@@ -801,7 +890,6 @@ export default function CustomerDashboard({ address }: { address: string | undef
                 >
                   Confirm Stolen
                 </button>
-
               </div>
             </form>
           </div>

@@ -152,7 +152,7 @@ export default function IssuerDistributionDashboard({ address }: { address: stri
             placeholder="🔍 Search by serial number..."
             value={searchSerial}
             onChange={e => setSearchSerial(e.target.value)}
-            className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-400 text-sm uppercase font-mono"
+            className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-400 text-sm font-mono"
           />
         </div>
       </div>
