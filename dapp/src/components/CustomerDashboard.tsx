@@ -23,6 +23,7 @@ interface WatchAsset {
   image: string;
   metadata: any;
   pendingRecipient?: string;
+  isStolen?: boolean;
 }
 
 interface ProvenanceEvent {
@@ -72,7 +73,7 @@ export default function CustomerDashboard({ address }: { address: string | undef
   const loadInventory = async () => {
     if (!publicClient || !address) return;
     
-    // Mostriamo il caricamento solo se l'inventario è vuoto (evita sfarfallii durante i refresh live)
+    // Show loading spinner only if all three arrays are empty (initial load)
     if (inventory.length === 0 && incomingTransfers.length === 0 && outgoingTransfers.length === 0) {
       setIsLoading(true);
     }
@@ -141,6 +142,21 @@ export default function CustomerDashboard({ address }: { address: string | undef
               }
             }
 
+            // Quick check for STOLEN status in provenance history
+            let isStolen = false;
+            try {
+              const historyRaw = await publicClient.readContract({
+                address: PROVENANCE_MANAGER_ADDRESS as `0x${string}`,
+                abi: provenanceManagerJson.abi,
+                functionName: 'getAssetHistory',
+                args: [BigInt(tokenId)]
+              }) as any[];
+              isStolen = historyRaw.some(evt => {
+                const type = evt.eventType ?? evt[1] ?? '';
+                return type.toUpperCase() === 'STOLEN';
+              });
+            } catch(e) {}
+
             return { 
               tokenId, 
               serial: physicalSerial,
@@ -149,6 +165,7 @@ export default function CustomerDashboard({ address }: { address: string | undef
               metadata,
               isOwner,
               isRecipient,
+              isStolen,
               pendingRecipient: pendingRecipient !== '0x0000000000000000000000000000000000000000' ? pendingRecipient : undefined
             };
           }
@@ -187,7 +204,6 @@ export default function CustomerDashboard({ address }: { address: string | undef
   }, [address, publicClient]); 
 
   // --- LIVE EVENT LISTENERS ---
-  // Ricarica automaticamente l'inventario quando avvengono trasferimenti o handshake
   useWatchContractEvent({
     address: OWNERSHIP_TRANSFER_ADDRESS as `0x${string}`,
     abi: ownershipTransferJson.abi,
@@ -340,7 +356,6 @@ export default function CustomerDashboard({ address }: { address: string | undef
       setInitiateStatus('✅ Handshake initiated! The recipient must now accept it.');
       setTimeout(() => {
         closeTransferModal();
-        // Nota: non serve chiamare loadInventory() qui perché lo farà in automatico il listener live!
       }, 3000);
 
     } catch (error: any) {
@@ -363,7 +378,6 @@ export default function CustomerDashboard({ address }: { address: string | undef
 
       setTransferCenterStatus('✅ Transfer accepted! Asset secured in your vault.');
       setTimeout(() => setTransferCenterStatus(''), 4000);
-      // Aggiornamento live automatico
     } catch (error: any) {
       console.error(error);
       setTransferCenterStatus(`❌ Error: ${error.message || 'Failed to accept'}`);
@@ -384,7 +398,6 @@ export default function CustomerDashboard({ address }: { address: string | undef
 
       setTransferCenterStatus('✅ Transfer canceled. The asset remains in your vault.');
       setTimeout(() => setTransferCenterStatus(''), 4000);
-      // Aggiornamento live automatico
     } catch (error: any) {
       console.error(error);
       setTransferCenterStatus(`❌ Error: ${error.message || 'Failed to cancel'}`);
@@ -425,6 +438,7 @@ export default function CustomerDashboard({ address }: { address: string | undef
       setStolenStatus('✅ Asset reported as STOLEN and registered on the blockchain.');
       setTimeout(() => {
         closeStolenModal();
+        loadInventory();
       }, 2500);
     } catch (error: any) {
       console.error(error);
@@ -485,15 +499,24 @@ export default function CustomerDashboard({ address }: { address: string | undef
       {!isLoading && inventory.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12 animate-fade-in">
           {filteredInventory.map((asset) => (
-            <div key={asset.tokenId} className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow flex flex-col">
+            <div 
+              key={asset.tokenId} 
+              className={`bg-white border ${asset.isStolen ? 'border-red-400 ring-2 ring-red-100' : 'border-slate-200'} rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow flex flex-col`}
+            >
               
+              {asset.isStolen && (
+                <div className="bg-red-600 text-white text-center py-1.5 text-[10px] font-bold uppercase tracking-widest">
+                  ⚠️ Reported Stolen
+                </div>
+              )}
+
               <div className="bg-slate-50 h-52 w-full flex items-center justify-center border-b border-slate-100 overflow-hidden relative p-4">
                 {asset.image ? (
-                  <img src={asset.image} alt={asset.name} className="max-h-full max-w-full object-contain drop-shadow-sm" />
+                  <img src={asset.image} alt={asset.name} className={`max-h-full max-w-full object-contain drop-shadow-sm ${asset.isStolen ? 'grayscale opacity-80' : ''}`} />
                 ) : (
                   <span className="text-5xl">⌚</span>
                 )}
-                <span className="absolute top-2 right-2 bg-black/70 text-white text-[10px] font-bold px-2 py-1 rounded">
+                <span className={`absolute top-2 right-2 text-white text-[10px] font-bold px-2 py-1 rounded ${asset.isStolen ? 'bg-red-600/90' : 'bg-black/70'}`}>
                   #{asset.tokenId}
                 </span>
               </div>
@@ -503,7 +526,7 @@ export default function CustomerDashboard({ address }: { address: string | undef
                 
                 <div className="mb-4">
                   <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-0.5">Physical Serial</span>
-                  <span className="text-xs font-mono font-semibold bg-slate-100 text-slate-700 px-2 py-1 rounded inline-block">
+                  <span className={`text-xs font-mono font-semibold px-2 py-1 rounded inline-block ${asset.isStolen ? 'bg-red-50 text-red-800' : 'bg-slate-100 text-slate-700'}`}>
                     {asset.serial}
                   </span>
                 </div>
@@ -524,20 +547,27 @@ export default function CustomerDashboard({ address }: { address: string | undef
                   >
                     View Provenance History
                   </button>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button 
-                      onClick={() => setSelectedToken(asset.tokenId)}
-                      className="py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors font-medium text-xs"
-                    >
-                      P2P Transfer
-                    </button>
-                    <button 
-                      onClick={() => handleReportStolen(asset.tokenId)}
-                      className="py-2 bg-red-50 text-red-600 border border-red-200 rounded-lg hover:bg-red-100 transition-colors font-medium text-xs"
-                    >
-                      Report Stolen
-                    </button>
-                  </div>
+                  
+                  {!asset.isStolen ? (
+                    <div className="grid grid-cols-2 gap-2">
+                      <button 
+                        onClick={() => setSelectedToken(asset.tokenId)}
+                        className="py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors font-medium text-xs"
+                      >
+                        P2P Transfer
+                      </button>
+                      <button 
+                        onClick={() => handleReportStolen(asset.tokenId)}
+                        className="py-2 bg-red-50 text-red-600 border border-red-200 rounded-lg hover:bg-red-100 transition-colors font-medium text-xs"
+                      >
+                        Report Stolen
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="text-center p-2.5 bg-red-50 text-red-600 rounded-lg text-xs font-medium border border-red-100">
+                      Functions locked. Asset frozen.
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -580,7 +610,7 @@ export default function CustomerDashboard({ address }: { address: string | undef
                       <div key={asset.tokenId} className="flex flex-col sm:flex-row bg-white border border-blue-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow">
                         <div className="w-full sm:w-48 h-48 sm:h-auto bg-blue-50/50 flex items-center justify-center p-4 border-b sm:border-b-0 sm:border-r border-blue-100 relative">
                           {asset.image ? (
-                            <img src={asset.image} alt={asset.name} className="max-h-full max-w-full object-contain drop-shadow-sm" />
+                            <img src={asset.image} alt={asset.name} className={`max-h-full max-w-full object-contain drop-shadow-sm ${asset.isStolen ? 'grayscale' : ''}`} />
                           ) : (
                             <span className="text-5xl">⌚</span>
                           )}
@@ -594,10 +624,18 @@ export default function CustomerDashboard({ address }: { address: string | undef
                               </span>
                             </div>
                             <p className="text-xs font-mono text-slate-500 mb-4">Serial: {asset.serial} (ID: #{asset.tokenId})</p>
-                            <p className="text-sm text-slate-600 mb-4">
-                              A verified digital passport has been sent to your wallet. Accept the handshake to secure it in your vault.
-                            </p>
+                            
+                            {asset.isStolen ? (
+                              <p className="text-sm font-bold text-red-600 mb-4 bg-red-50 p-2 rounded border border-red-200">
+                                ⚠️ WARNING: This incoming asset has been reported as STOLEN.
+                              </p>
+                            ) : (
+                              <p className="text-sm text-slate-600 mb-4">
+                                A verified digital passport has been sent to your wallet. Accept the handshake to secure it in your vault.
+                              </p>
+                            )}
                           </div>
+                          
                           <button 
                             onClick={() => handleAcceptTransfer(asset.tokenId)}
                             className="w-full sm:w-auto px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm shadow-sm"
