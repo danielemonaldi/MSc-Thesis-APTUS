@@ -1,66 +1,50 @@
-## Foundry
+# APTUS Smart Contracts
 
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
+This directory contains the immutable blockchain backend for the **APTUS Framework**, developed using [Foundry](https://book.getfoundry.sh/). 
 
-Foundry consists of:
+The architecture is deliberately decoupled into distinct modular components to simplify testing, isolate business logic, and reduce the overall attack surface.
 
-- **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
-- **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
-- **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
-- **Chisel**: Fast, utilitarian, and verbose solidity REPL.
+## 🏗 Architecture
 
-## Documentation
+- **`RoleManager.sol`**: Implements Role-Based Access Control (RBAC) and the on-chain Know Your Business (KYB) identity registry.
+- **`AssetRegistry.sol`**: The core ERC-721 implementation handling token minting and IPFS metadata URI binding.
+- **`ProvenanceManager.sol`**: An append-only cryptographic ledger dedicated to recording lifecycle events (e.g., maintenance, stolen status).
+- **`OwnershipTransfer.sol`**: Governs the secure Two-Step Handshake mechanism for trustless secondary market transfers.
 
-https://book.getfoundry.sh/
+## 🛠 Usage & Commands
 
-## Usage
-
-### Build
-
+### Setup
+Install dependencies and build the smart contracts:
 ```shell
+$ forge install
 $ forge build
 ```
 
-### Test
-
+### Testing & Gas Profiling
+Run the test suite to validate the asset lifecycle and security edge-cases:
 ```shell
 $ forge test
 ```
-
-### Format
-
-```shell
-$ forge fmt
-```
-
-### Gas Snapshots
-
+To generate a gas snapshot of the core operations:
 ```shell
 $ forge snapshot
 ```
 
-### Anvil
-
+### Local Simulation (Anvil)
+Start a local Ethereum node for zero-cost testing and rapid iteration:
 ```shell
 $ anvil
 ```
 
-### Deploy
+### Deployment
+Create a `.env` file in this directory containing your private keys and RPC URLs (e.g., Alchemy). Then run the deployment script:
 
+**Local Deployment:**
 ```shell
-$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
+$ forge script script/DeployAptus.s.sol --rpc-url http://127.0.0.1:8545 --broadcast
 ```
 
-### Cast
-
+**Sepolia Testnet Deployment:**
 ```shell
-$ cast <subcommand>
-```
-
-### Help
-
-```shell
-$ forge --help
-$ anvil --help
-$ cast --help
+$ forge script script/DeployAptus.s.sol --rpc-url sepolia --private-key $PRIVATE_KEY --broadcast --verify -vvvv
 ```
